@@ -21,9 +21,6 @@ _This section is for Codex / Claude Code via the Xcode Bridge. Fetch all URLs be
 - `WKHapticType` (all haptic constants): https://developer.apple.com/documentation/watchkit/wkhaptictype
 - `WKInterfaceDevice` (call `.play(_ type:)` on this): https://developer.apple.com/documentation/watchkit/wkinterfacedevice
 
-### Watch Input
-- `digitalCrownRotation(_:)` SwiftUI modifier: https://developer.apple.com/documentation/swiftui/view/digitalcrownrotation(_:)
-
 ### Audio — iPhone
 - `AVSpeechSynthesizer`: https://developer.apple.com/documentation/avfaudio/avspeechsynthesizer
 - `AVSpeechUtterance`: https://developer.apple.com/documentation/avfaudio/avspeechutterance
@@ -74,10 +71,10 @@ Default rules align with common table tennis play and stay invisible unless acti
 **Settings surface:** A sheet, not a home page. Four groups only:
 - **Scoring** — 11 points default, best-of-3 default
 - **Audio** — on/off and voice selection
-- **Watch Input** — input mode selection (on-screen default, crown as alternate)
+- **Watch Input** — on-screen tap input
 - **More Inputs** — disabled row reading "Flic Button — Coming Soon"
 
-**Apple Watch scene:** Gesture-driven screen for the exact scoring actions confirmed by client. Default is on-screen tap input. Crown-based input is a selectable secondary mode in settings. Visual confirmation on each accepted point. Haptic confirmation per gesture (see Haptics spec below).
+**Apple Watch scene:** Gesture-driven screen for the exact scoring actions confirmed by client. On-screen tap input is the scoring surface. Visual confirmation on each accepted point. Haptic confirmation per gesture (see Haptics spec below).
 
 **Immersive visual-table UI (v2 only):** Client has a sketch concept for a literal table illustration with circular score elements. This is a promising v2 exploration — validate the bare scoreboard first, then test the immersive board as an optional theme after the input loop is proven.
 
@@ -127,7 +124,7 @@ Note: Apple warns against firing watch haptics repeatedly in quick succession. H
 **Reference stack:**
 - watchOS paired app setup + WatchConnectivity overview
 - `WCSession.sendMessage`, `isReachable`, `updateApplicationContext`
-- `digitalCrownRotation` + `WKHapticType` for watch input
+- `WKHapticType` for watch haptics
 - `AVSpeechSynthesizer`, `AVSpeechSynthesisVoice`, `AVAudioSession`, audio route changes
 - `MPRemoteCommandCenter` (future headphone/remote input)
 - Flic iOS SDK docs + Flic 2 developer assets
@@ -157,14 +154,14 @@ Note: Apple warns against firing watch haptics repeatedly in quick succession. H
 6. Reset clears the current game after confirmation
 
 **Functional requirements.**
-- Watch: on-screen tap input as default; crown-based as selectable alternate in settings
+- Watch: on-screen tap input
 - Watch: distinct haptic per gesture (see Haptics spec)
 - Watch: input queue handles rapid taps without dropping points
 - Watch: double-tap window (~300ms) distinguishes P1 from P2 event
 - iPhone: large legible scoreboard visible at all times
 - iPhone: audio feedback routing to speaker or connected audio output
 - WatchConnectivity: immediate messaging when reachable; `updateApplicationContext` fallback for recovery
-- Settings: scoring rules, audio on/off, watch input mode, Flic Coming Soon row
+- Settings: scoring rules, audio on/off, Flic Coming Soon row
 
 **Non-goals for this milestone.** Flic input (Coming Soon only), headphone-button input, Bluetooth remote input, doubles mode, replay, match history, statistics, export/import, advanced rules tuning, AirPlay controls, immersive table visuals.
 

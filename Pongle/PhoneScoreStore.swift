@@ -8,15 +8,24 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     @Published private(set) var game = GameState()
     @Published private(set) var isWatchReachable = false
     @Published private(set) var lastConnectivityError: String?
-    @Published var isAudioEnabled = true
+
+    let settings: AppSettings
 
     private let announcer = ScoreAnnouncer()
     private var session: WCSession?
     private var lastAppliedWatchSequence = 0
-    private var phoneSequence = 0
+    // Seed with wall-clock ms so sequences stay monotonic across phone relaunches.
+    // Prevents the watch from dropping a fresh snapshot because it remembers a
+    // higher sequence from a previous session.
+    private var phoneSequence = Int(Date().timeIntervalSince1970 * 1000)
+    private var cancellables: Set<AnyCancellable> = []
 
-    init(activatesConnectivity: Bool = true) {
+    init(settings: AppSettings, activatesConnectivity: Bool = true) {
+        self.settings = settings
         super.init()
+
+        applySettingsToGame(resetOnChange: false)
+        observeSettings()
 
         guard activatesConnectivity, WCSession.isSupported() else {
             return
@@ -28,12 +37,28 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         session.activate()
     }
 
+    var isAudioEnabled: Bool {
+        settings.announcementsEnabled
+    }
+
     var statusText: String {
         if let lastConnectivityError {
             return lastConnectivityError
         }
 
-        return game.winner.map { "Game - \($0.displayName)" } ?? "First to 11, win by 2"
+        if let matchWinner = game.matchWinner {
+            return "Match - \(settings.displayName(for: matchWinner))"
+        }
+
+        if let gameWinner = game.gameWinner {
+            return "Game - \(settings.displayName(for: gameWinner))"
+        }
+
+        let base = "First to \(settings.pointsToWin.rawValue), win by 2"
+        guard settings.matchLength != .single else {
+            return base
+        }
+        return "\(base) · Games \(game.playerOneGames)–\(game.playerTwoGames)"
     }
 
     func undo() {
@@ -53,10 +78,51 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     }
 
     func toggleAudio() {
-        isAudioEnabled.toggle()
+        settings.announcementsEnabled.toggle()
 
-        if !isAudioEnabled {
+        if !settings.announcementsEnabled {
             announcer.stop()
+        }
+        objectWillChange.send()
+    }
+
+    private func observeSettings() {
+        settings.$pointsToWin
+            .dropFirst()
+            .sink { [weak self] _ in self?.applySettingsToGame(resetOnChange: true) }
+            .store(in: &cancellables)
+
+        settings.$matchLength
+            .dropFirst()
+            .sink { [weak self] _ in self?.applySettingsToGame(resetOnChange: true) }
+            .store(in: &cancellables)
+
+        Publishers.MergeMany(
+            settings.$playerOneName.dropFirst().map { _ in }.eraseToAnyPublisher(),
+            settings.$playerTwoName.dropFirst().map { _ in }.eraseToAnyPublisher(),
+            settings.$playerOneBatColor.dropFirst().map { _ in }.eraseToAnyPublisher(),
+            settings.$playerTwoBatColor.dropFirst().map { _ in }.eraseToAnyPublisher()
+        )
+        // `@Published` fires during `willSet`; hop to the next runloop so the
+        // broadcast reads the post-mutation value instead of the stale one.
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _ in self?.broadcastCurrentStateToWatch() }
+        .store(in: &cancellables)
+
+        // Forward settings mutations as store updates so SwiftUI re-renders chips/statusText.
+        settings.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+    }
+
+    private func applySettingsToGame(resetOnChange: Bool) {
+        game.winningScore = settings.pointsToWin.rawValue
+        game.gamesToWin = settings.matchLength.gamesToWin
+
+        if resetOnChange {
+            game.reset()
+            announcer.stop()
+            broadcastCurrentStateToWatch()
         }
     }
 
@@ -119,14 +185,29 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     }
 
     private func announceCurrentScore() {
-        guard isAudioEnabled else {
+        guard settings.announcementsEnabled else {
             return
         }
 
-        if let winner = game.winner {
-            announcer.speak("Game, \(winner.displayName)")
-        } else {
-            announcer.speak("\(game.playerOneScore) \(game.playerTwoScore)")
+        if let matchWinner = game.matchWinner {
+            if settings.announceWinner {
+                announcer.speak("Match, \(settings.displayName(for: matchWinner))", voiceIdentifier: settings.voiceIdentifier)
+            }
+            return
+        }
+
+        if let gameWinner = game.gameWinner {
+            if settings.announceWinner {
+                announcer.speak("Game, \(settings.displayName(for: gameWinner))", voiceIdentifier: settings.voiceIdentifier)
+            }
+            return
+        }
+
+        if settings.announceScore {
+            announcer.speak(
+                "\(game.playerOneScore) \(game.playerTwoScore)",
+                voiceIdentifier: settings.voiceIdentifier
+            )
         }
     }
 
@@ -139,6 +220,10 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             ConnectivityKey.phoneSequence: phoneSequence,
             ConnectivityKey.playerOneScore: game.playerOneScore,
             ConnectivityKey.playerTwoScore: game.playerTwoScore,
+            ConnectivityKey.playerOneName: settings.displayName(for: .playerOne),
+            ConnectivityKey.playerTwoName: settings.displayName(for: .playerTwo),
+            ConnectivityKey.playerOneColorID: settings.playerOneBatColor.rawValue,
+            ConnectivityKey.playerTwoColorID: settings.playerTwoBatColor.rawValue,
             ConnectivityKey.history: game.history.map(\.rawValue)
         ]
 
@@ -177,6 +262,7 @@ extension PhoneScoreStore: WCSessionDelegate {
         Task { @MainActor [weak self] in
             self?.isWatchReachable = isReachable
             self?.lastConnectivityError = errorMessage
+            self?.broadcastCurrentStateToWatch()
         }
     }
 
@@ -222,7 +308,7 @@ private final class ScoreAnnouncer {
     private let synthesizer = AVSpeechSynthesizer()
     private var isAudioSessionReady = false
 
-    func speak(_ text: String) {
+    func speak(_ text: String, voiceIdentifier: String = "") {
         prepareAudioSessionIfNeeded()
 
         if synthesizer.isSpeaking {
@@ -233,7 +319,12 @@ private final class ScoreAnnouncer {
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         utterance.pitchMultiplier = 1.0
         utterance.volume = 1.0
-        utterance.voice = AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
+        if !voiceIdentifier.isEmpty,
+           let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
+            utterance.voice = voice
+        } else {
+            utterance.voice = AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
+        }
         synthesizer.speak(utterance)
     }
 
@@ -266,6 +357,10 @@ private enum ConnectivityKey {
     static let player = "player"
     static let playerOneScore = "playerOneScore"
     static let playerTwoScore = "playerTwoScore"
+    static let playerOneName = "playerOneName"
+    static let playerTwoName = "playerTwoName"
+    static let playerOneColorID = "playerOneColorID"
+    static let playerTwoColorID = "playerTwoColorID"
     static let history = "history"
 }
 

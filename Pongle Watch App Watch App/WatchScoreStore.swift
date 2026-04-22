@@ -8,11 +8,16 @@ final class WatchScoreStore: NSObject, ObservableObject {
     @Published private(set) var game = GameState()
     @Published private(set) var isPhoneReachable = false
     @Published private(set) var eventText = "Ready"
+    @Published private(set) var playerOneName = Player.playerOne.displayName
+    @Published private(set) var playerTwoName = Player.playerTwo.displayName
+    @Published private(set) var playerOneColorID = "teal"
+    @Published private(set) var playerTwoColorID = "orange"
 
     private var session: WCSession?
     private var pendingTapTask: Task<Void, Never>?
     private var watchSequence = 0
     private var lastAppliedPhoneSequence = 0
+    private static let validColorIDs: Set<String> = ["teal", "orange", "blue", "red", "lime", "purple"]
 
     init(activatesConnectivity: Bool = true) {
         super.init()
@@ -62,16 +67,39 @@ final class WatchScoreStore: NSObject, ObservableObject {
         }
 
         game.undoLastPoint()
-        eventText = game.winner.map { "Game - \($0.displayName)" } ?? "Undo"
+        eventText = game.winner.map { "Game - \(displayName(for: $0))" } ?? "Undo"
         watchSequence += 1
         sendScoreEvent(action: .undo, player: nil)
         publishCurrentState()
         WKInterfaceDevice.current().play(.notification)
     }
 
+    func displayName(for player: Player) -> String {
+        let candidate: String
+        switch player {
+        case .playerOne:
+            candidate = playerOneName
+        case .playerTwo:
+            candidate = playerTwoName
+        }
+
+        let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return player.displayName
+        }
+        return String(trimmed.prefix(18))
+    }
+
+    func colorID(for player: Player) -> String {
+        switch player {
+        case .playerOne: playerOneColorID
+        case .playerTwo: playerTwoColorID
+        }
+    }
+
     private func commitPoint(for player: Player) {
         game.addPoint(for: player)
-        eventText = game.winner.map { "Game - \($0.displayName)" } ?? "\(player.displayName) +1"
+        eventText = game.winner.map { "Game - \(displayName(for: $0))" } ?? "\(displayName(for: player)) +1"
         watchSequence += 1
 
         sendScoreEvent(action: .point, player: player)
@@ -136,7 +164,25 @@ final class WatchScoreStore: NSObject, ObservableObject {
             game.replace(withHistory: rawHistory.compactMap(Player.init(rawValue:)))
         }
 
-        eventText = game.winner.map { "Game - \($0.displayName)" } ?? "Synced"
+        if let name = payload[ConnectivityKey.playerOneName] as? String {
+            playerOneName = Self.limitedName(name)
+        }
+
+        if let name = payload[ConnectivityKey.playerTwoName] as? String {
+            playerTwoName = Self.limitedName(name)
+        }
+
+        if let colorID = payload[ConnectivityKey.playerOneColorID] as? String,
+           Self.validColorIDs.contains(colorID) {
+            playerOneColorID = colorID
+        }
+
+        if let colorID = payload[ConnectivityKey.playerTwoColorID] as? String,
+           Self.validColorIDs.contains(colorID) {
+            playerTwoColorID = colorID
+        }
+
+        eventText = game.winner.map { "Game - \(displayName(for: $0))" } ?? "Synced"
     }
 
     private func handleConnectivityPayload(_ payload: [String: Any]) {
@@ -157,6 +203,10 @@ final class WatchScoreStore: NSObject, ObservableObject {
                 WKInterfaceDevice.current().play(.directionUp)
             }
         }
+    }
+
+    private static func limitedName(_ name: String) -> String {
+        String(name.prefix(18))
     }
 }
 
@@ -205,6 +255,10 @@ private enum ConnectivityKey {
     static let player = "player"
     static let playerOneScore = "playerOneScore"
     static let playerTwoScore = "playerTwoScore"
+    static let playerOneName = "playerOneName"
+    static let playerTwoName = "playerTwoName"
+    static let playerOneColorID = "playerOneColorID"
+    static let playerTwoColorID = "playerTwoColorID"
     static let history = "history"
 }
 
