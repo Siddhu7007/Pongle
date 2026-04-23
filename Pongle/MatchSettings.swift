@@ -108,6 +108,9 @@ final class AppSettings: ObservableObject {
         static let playerTwoName = "pongle.playerTwoName"
         static let playerOneBatColor = "pongle.playerOneBatColor"
         static let playerTwoBatColor = "pongle.playerTwoBatColor"
+        static let watchMode = "pongle.watchMode"
+        static let watchSwipeEnabled = "pongle.watchSwipeEnabled"
+        static let iphoneTapInputEnabled = "iphoneTapInputEnabled"
     }
 
     @Published var pointsToWin: PointsToWin {
@@ -158,6 +161,18 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(playerTwoBatColor.rawValue, forKey: Key.playerTwoBatColor) }
     }
 
+    @Published var watchMode: WatchMode {
+        didSet { UserDefaults.standard.set(watchMode.rawValue, forKey: Key.watchMode) }
+    }
+
+    @Published var watchSwipeEnabled: Bool {
+        didSet { UserDefaults.standard.set(watchSwipeEnabled, forKey: Key.watchSwipeEnabled) }
+    }
+
+    @Published var iphoneTapInputEnabled: Bool {
+        didSet { UserDefaults.standard.set(iphoneTapInputEnabled, forKey: Key.iphoneTapInputEnabled) }
+    }
+
     init() {
         let defaults = UserDefaults.standard
 
@@ -177,6 +192,9 @@ final class AppSettings: ObservableObject {
         self.playerTwoName = Self.limitedPlayerName(defaults.string(forKey: Key.playerTwoName) ?? "")
         self.playerOneBatColor = PlayerBatColor(rawValue: defaults.string(forKey: Key.playerOneBatColor) ?? "") ?? .teal
         self.playerTwoBatColor = PlayerBatColor(rawValue: defaults.string(forKey: Key.playerTwoBatColor) ?? "") ?? .orange
+        self.watchMode = WatchMode(rawValue: defaults.string(forKey: Key.watchMode) ?? "") ?? .inputPad
+        self.watchSwipeEnabled = (defaults.object(forKey: Key.watchSwipeEnabled) as? Bool) ?? true
+        self.iphoneTapInputEnabled = (defaults.object(forKey: Key.iphoneTapInputEnabled) as? Bool) ?? false
     }
 
     var voiceDisplayName: String {
@@ -317,12 +335,25 @@ struct MatchControlsDock: View {
                     .padding(.vertical, 12)
             }
 
+            section(title: "Watch Modes") {
+                WatchModePickerSection()
+                    .padding(.vertical, 12)
+            }
+
             section(title: "Controls") {
                 SettingsIconStatusRow(
                     icon: "applewatch",
                     title: "Apple Watch",
                     value: isWatchConnected ? "Connected" : "Not Connected",
                     valueColor: isWatchConnected ? .pongleAccent : .white.opacity(0.45)
+                )
+
+                divider
+
+                SettingsToggleRow(
+                    title: "Enable iPhone Tap Input",
+                    subtitle: "Lets the iPhone scoreboard accept direct taps for testing",
+                    isOn: $settings.iphoneTapInputEnabled
                 )
 
                 divider
@@ -541,11 +572,225 @@ private struct BatColorPickerPopover: View {
     }
 }
 
+private struct WatchModePickerSection: View {
+    @EnvironmentObject var settings: AppSettings
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(WatchMode.allCases) { mode in
+                        WatchModePreviewCard(
+                            mode: mode,
+                            isSelected: settings.watchMode == mode
+                        ) {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                settings.watchMode = mode
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .scrollClipDisabled()
+
+            Rectangle()
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 1)
+
+            SettingsToggleRow(
+                title: "Allow swiping between modes",
+                isOn: $settings.watchSwipeEnabled
+            )
+
+            Rectangle()
+                .fill(Color.white.opacity(0.06))
+                .frame(height: 1)
+
+            SettingsValueRow(title: "Default watch mode", value: settings.watchMode.title)
+        }
+    }
+}
+
+private struct WatchModePreviewCard: View {
+    let mode: WatchMode
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                WatchModeMiniPreview(mode: mode)
+                    .frame(height: 82)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(mode.title)
+                            .font(.system(.subheadline, design: .rounded, weight: .bold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+
+                        Spacer(minLength: 4)
+
+                        if isSelected {
+                            Text("Default")
+                                .font(.system(size: 9, weight: .bold, design: .rounded))
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.pongleAccent))
+                        }
+                    }
+
+                    Text(mode.subtitle)
+                        .font(.system(.caption, design: .rounded, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.78)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .padding(10)
+            .frame(width: 174, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(isSelected ? 0.09 : 0.04))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(
+                        isSelected ? Color.pongleAccent : Color.white.opacity(0.08),
+                        lineWidth: isSelected ? 2 : 1
+                    )
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(mode.title), \(mode.subtitle)")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+}
+
+private struct WatchModeMiniPreview: View {
+    let mode: WatchMode
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.black)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                }
+
+            switch mode {
+            case .inputPad:
+                inputPadPreview
+            case .scoreGlance:
+                scoreGlancePreview
+            }
+        }
+    }
+
+    private var inputPadPreview: some View {
+        VStack(spacing: 5) {
+            Circle()
+                .fill(Color.green.opacity(0.2))
+                .overlay {
+                    Circle()
+                        .stroke(Color.green.opacity(0.85), lineWidth: 1.5)
+                }
+                .overlay {
+                    VStack(spacing: -1) {
+                        Text("+1")
+                            .font(.system(size: 22, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("ME")
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.86))
+                    }
+                }
+                .frame(width: 52, height: 52)
+
+            Text("Tap • Tap Tap • Hold")
+                .font(.system(size: 8, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.52))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(8)
+    }
+
+    private var scoreGlancePreview: some View {
+        VStack(spacing: 7) {
+            HStack(spacing: 4) {
+                scorePreviewTile(value: "04", accent: Color.teal)
+                scorePreviewTile(value: "02", accent: Color.pongleAccent)
+            }
+
+            Text("Player 1 +1")
+                .font(.system(size: 8, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.52))
+                .lineLimit(1)
+        }
+        .padding(8)
+    }
+
+    private func scorePreviewTile(value: String, accent: Color) -> some View {
+        VStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(accent)
+                .frame(height: 3)
+
+            Text(value)
+                .font(.system(size: 18, weight: .black, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+        )
+    }
+}
+
 // MARK: - Row primitives
 
 private struct SettingsToggleRow: View {
     let title: String
+    var subtitle: String?
     @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(.subheadline, design: .rounded, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.88))
+
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(.caption, design: .rounded, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .tint(Color.pongleAccent)
+        }
+        .frame(minHeight: subtitle == nil ? 40 : 52)
+    }
+}
+
+private struct SettingsValueRow: View {
+    let title: String
+    let value: String
 
     var body: some View {
         HStack {
@@ -553,9 +798,11 @@ private struct SettingsToggleRow: View {
                 .font(.system(.subheadline, design: .rounded, weight: .medium))
                 .foregroundStyle(.white.opacity(0.88))
             Spacer()
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .tint(Color.pongleAccent)
+            Text(value)
+                .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
         }
         .frame(minHeight: 40)
     }

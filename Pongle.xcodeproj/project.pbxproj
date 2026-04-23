@@ -39,6 +39,16 @@
 		5396BB392F97F85D00F4B296 /* Pongle Watch App Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Pongle Watch App Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C0D3A1202F98432100F4B296 /* Exceptions for "Pongle Watch App Watch App" folder in "Pongle Watch App Watch App" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 5396BB382F97F85D00F4B296 /* Pongle Watch App Watch App */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		5396BB272F97F62000F4B296 /* Pongle */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -47,7 +57,15 @@
 		};
 		5396BB3A2F97F85D00F4B296 /* Pongle Watch App Watch App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C0D3A1202F98432100F4B296 /* Exceptions for "Pongle Watch App Watch App" folder in "Pongle Watch App Watch App" target */,
+			);
 			path = "Pongle Watch App Watch App";
+			sourceTree = "<group>";
+		};
+		5396BB482F97FB0000F4B296 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,6 +93,7 @@
 			children = (
 				5396BB272F97F62000F4B296 /* Pongle */,
 				5396BB3A2F97F85D00F4B296 /* Pongle Watch App Watch App */,
+				5396BB482F97FB0000F4B296 /* Shared */,
 				5396BB262F97F62000F4B296 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -107,6 +126,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				5396BB272F97F62000F4B296 /* Pongle */,
+				5396BB482F97FB0000F4B296 /* Shared */,
 			);
 			name = Pongle;
 			packageProductDependencies = (
@@ -129,6 +149,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				5396BB3A2F97F85D00F4B296 /* Pongle Watch App Watch App */,
+				5396BB482F97FB0000F4B296 /* Shared */,
 			);
 			name = "Pongle Watch App Watch App";
 			packageProductDependencies = (
@@ -345,10 +366,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4L2HM5CCW9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -378,10 +400,11 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4L2HM5CCW9;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleIconName = AppIcon;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -411,13 +434,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4L2HM5CCW9;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Pongle Watch App";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.cynqventures.pongle;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_ENABLE_CFBUNDLEICONS_MERGE = NO;
+				INFOPLIST_FILE = "Pongle Watch App Watch App/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -444,13 +466,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 4L2HM5CCW9;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Pongle Watch App";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.cynqventures.pongle;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_ENABLE_CFBUNDLEICONS_MERGE = NO;
+				INFOPLIST_FILE = "Pongle Watch App Watch App/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

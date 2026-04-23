@@ -37,6 +37,219 @@ struct ContentView: View {
     @ObservedObject var store: WatchScoreStore
 
     var body: some View {
+        WatchRootModeContainer(store: store)
+    }
+}
+
+private struct WatchRootModeContainer: View {
+    @ObservedObject var store: WatchScoreStore
+    @State private var selectedMode = WatchMode.inputPad
+
+    var body: some View {
+        Group {
+            if store.watchSwipeEnabled {
+                TabView(selection: $selectedMode) {
+                    InputPadWatchView(store: store)
+                        .tag(WatchMode.inputPad)
+
+                    ScoreGlanceWatchView(store: store)
+                        .tag(WatchMode.scoreGlance)
+                }
+                .tabViewStyle(.page(indexDisplayMode: .automatic))
+            } else {
+                modeView(store.defaultWatchMode)
+            }
+        }
+        .onAppear {
+            selectedMode = store.defaultWatchMode
+        }
+        .onChange(of: store.defaultWatchMode) { _, newMode in
+            selectedMode = newMode
+        }
+        .onChange(of: store.watchSwipeEnabled) { _, isEnabled in
+            if isEnabled {
+                selectedMode = store.defaultWatchMode
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func modeView(_ mode: WatchMode) -> some View {
+        switch mode {
+        case .inputPad:
+            InputPadWatchView(store: store)
+        case .scoreGlance:
+            ScoreGlanceWatchView(store: store)
+        }
+    }
+}
+
+private struct InputPadWatchView: View {
+    @ObservedObject var store: WatchScoreStore
+
+    var body: some View {
+        GeometryReader { proxy in
+            let buttonSize = min(proxy.size.width * 0.84, proxy.size.height * 0.62, 188)
+
+            ZStack {
+                Color.black
+                    .ignoresSafeArea()
+
+                RadialGradient(
+                    colors: [
+                        Color.green.opacity(0.26),
+                        Color.green.opacity(0.1),
+                        Color.clear
+                    ],
+                    center: .center,
+                    startRadius: 8,
+                    endRadius: max(proxy.size.width, proxy.size.height) * 0.56
+                )
+                .scaleEffect(x: 1.18, y: 0.92)
+                .offset(y: -2)
+
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) {
+                        Text("Input Pad")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.72))
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(store.isPhoneReachable ? Color.green : Color.pongleAccent)
+                                .frame(width: 6, height: 6)
+                                .shadow(
+                                    color: (store.isPhoneReachable ? Color.green : Color.pongleAccent).opacity(0.55),
+                                    radius: 5,
+                                    x: 0,
+                                    y: 0
+                                )
+
+                            Image(systemName: store.isPhoneReachable ? "iphone.radiowaves.left.and.right" : "iphone")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(store.isPhoneReachable ? Color.green.opacity(0.9) : Color.pongleAccent.opacity(0.82))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Color.white.opacity(0.07)))
+                        .overlay {
+                            Capsule()
+                                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        }
+                        .accessibilityLabel(store.isPhoneReachable ? "Phone connected" : "Phone idle")
+                    }
+                    .frame(height: 24)
+
+                    Spacer(minLength: 8)
+
+                    ZStack {
+                        Circle()
+                            .fill(
+                                RadialGradient(
+                                    colors: [
+                                        Color.green.opacity(0.42),
+                                        Color.green.opacity(0.2),
+                                        Color(red: 0.02, green: 0.12, blue: 0.05)
+                                    ],
+                                    center: .center,
+                                    startRadius: 4,
+                                    endRadius: buttonSize / 2
+                                )
+                            )
+
+                        Circle()
+                            .stroke(
+                                LinearGradient(
+                                    colors: [
+                                        Color.green.opacity(0.95),
+                                        Color.green.opacity(0.46)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 3
+                            )
+
+                        Circle()
+                            .stroke(Color.green.opacity(0.2), lineWidth: 18)
+                            .blur(radius: 15)
+
+                        Circle()
+                            .fill(Color.white.opacity(0.06))
+                            .frame(width: buttonSize * 0.42, height: buttonSize * 0.42)
+                            .blur(radius: 16)
+                            .offset(x: -buttonSize * 0.14, y: -buttonSize * 0.14)
+
+                        VStack(spacing: 6) {
+                            Text("+1")
+                                .font(.system(size: buttonSize * 0.4, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                                .shadow(color: .black.opacity(0.55), radius: 2, x: 0, y: 2)
+
+                            Text("ME")
+                                .font(.system(size: buttonSize * 0.14, weight: .black, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.92))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                                .shadow(color: .black.opacity(0.45), radius: 1, x: 0, y: 1)
+                        }
+                    }
+                    .frame(width: buttonSize, height: buttonSize)
+                    .shadow(color: Color.green.opacity(0.55), radius: 24, x: 0, y: 0)
+                    .contentShape(Circle())
+                    .onTapGesture {
+                        store.registerTap()
+                    }
+                    .onLongPressGesture(minimumDuration: 0.55) {
+                        store.undo()
+                    }
+                    .accessibilityLabel("Add point for me")
+                    .accessibilityHint("Tap once for me, tap twice for opponent, hold to undo")
+
+                    Spacer(minLength: 10)
+
+                    HStack(spacing: 6) {
+                        Text("Tap")
+                            .foregroundStyle(Color.green.opacity(0.88))
+                        Text("•")
+                            .foregroundStyle(.white.opacity(0.28))
+                        Text("Tap Tap")
+                            .foregroundStyle(Color.yellow.opacity(0.86))
+                        Text("•")
+                            .foregroundStyle(.white.opacity(0.28))
+                        Text("Hold")
+                            .foregroundStyle(Color.purple.opacity(0.86))
+                    }
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color.white.opacity(0.07)))
+                    .overlay {
+                        Capsule()
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .accessibilityLabel("Tap, tap tap, hold")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 13)
+                .padding(.top, 4)
+                .padding(.bottom, 12)
+            }
+        }
+    }
+}
+
+private struct ScoreGlanceWatchView: View {
+    @ObservedObject var store: WatchScoreStore
+
+    var body: some View {
         ZStack {
             Color.black
                 .ignoresSafeArea()

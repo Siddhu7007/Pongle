@@ -12,12 +12,18 @@ final class WatchScoreStore: NSObject, ObservableObject {
     @Published private(set) var playerTwoName = Player.playerTwo.displayName
     @Published private(set) var playerOneColorID = "teal"
     @Published private(set) var playerTwoColorID = "orange"
+    @Published private(set) var defaultWatchMode = WatchMode.inputPad
+    @Published private(set) var watchSwipeEnabled = true
 
     private var session: WCSession?
     private var pendingTapTask: Task<Void, Never>?
-    private var watchSequence = 0
-    private var lastAppliedPhoneSequence = 0
+    private var pendingHapticTask: Task<Void, Never>?
+    // Keep event sequences ahead of any previous launch while the phone app is still alive.
+    private var watchSequence = WatchScoreStore.makeInitialSequence()
+    private var lastAppliedPhoneSequence: Int64 = 0
     private static let validColorIDs: Set<String> = ["teal", "orange", "blue", "red", "lime", "purple"]
+    private static let tapResolutionDelay: UInt64 = 300_000_000
+    private static let doublePointHapticDelay: UInt64 = 150_000_000
 
     init(activatesConnectivity: Bool = true) {
         super.init()
@@ -30,10 +36,11 @@ final class WatchScoreStore: NSObject, ObservableObject {
         self.session = session
         session.delegate = self
         session.activate()
+        handleConnectivityPayload(session.receivedApplicationContext)
     }
 
     func registerTap() {
-        guard game.winner == nil else {
+        guard game.matchWinner == nil else {
             return
         }
 
@@ -45,7 +52,7 @@ final class WatchScoreStore: NSObject, ObservableObject {
         }
 
         pendingTapTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            try? await Task.sleep(nanoseconds: Self.tapResolutionDelay)
 
             guard !Task.isCancelled else {
                 return
@@ -67,11 +74,11 @@ final class WatchScoreStore: NSObject, ObservableObject {
         }
 
         game.undoLastPoint()
-        eventText = game.winner.map { "Game - \(displayName(for: $0))" } ?? "Undo"
+        eventText = winEventText() ?? "Undo"
         watchSequence += 1
         sendScoreEvent(action: .undo, player: nil)
         publishCurrentState()
-        WKInterfaceDevice.current().play(.notification)
+        playUndoHaptic()
     }
 
     func displayName(for player: Player) -> String {
@@ -98,8 +105,13 @@ final class WatchScoreStore: NSObject, ObservableObject {
     }
 
     private func commitPoint(for player: Player) {
+        let previousHistoryCount = game.history.count
         game.addPoint(for: player)
-        eventText = game.winner.map { "Game - \(displayName(for: $0))" } ?? "\(displayName(for: player)) +1"
+        guard game.history.count > previousHistoryCount else {
+            return
+        }
+
+        eventText = winEventText() ?? "\(displayName(for: player)) +1"
         watchSequence += 1
 
         sendScoreEvent(action: .point, player: player)
@@ -139,6 +151,8 @@ final class WatchScoreStore: NSObject, ObservableObject {
             ConnectivityKey.kind: ConnectivityKind.stateSnapshot,
             ConnectivityKey.source: ConnectivitySource.watch,
             ConnectivityKey.watchSequence: watchSequence,
+            ConnectivityKey.winningScore: game.winningScore,
+            ConnectivityKey.gamesToWin: game.gamesToWin,
             ConnectivityKey.playerOneScore: game.playerOneScore,
             ConnectivityKey.playerTwoScore: game.playerTwoScore,
             ConnectivityKey.history: game.history.map(\.rawValue)
@@ -153,12 +167,17 @@ final class WatchScoreStore: NSObject, ObservableObject {
 
     private func applyPhoneSnapshot(from payload: [String: Any]) {
         guard (payload[ConnectivityKey.source] as? String) == ConnectivitySource.phone,
-              let phoneSequence = payload[ConnectivityKey.phoneSequence] as? Int,
+              let phoneSequence = Self.sequenceValue(from: payload, key: ConnectivityKey.phoneSequence),
               phoneSequence > lastAppliedPhoneSequence else {
             return
         }
 
         lastAppliedPhoneSequence = phoneSequence
+
+        if let winningScore = payload[ConnectivityKey.winningScore] as? Int,
+           let gamesToWin = payload[ConnectivityKey.gamesToWin] as? Int {
+            game.configure(winningScore: winningScore, gamesToWin: gamesToWin)
+        }
 
         if let rawHistory = payload[ConnectivityKey.history] as? [Int] {
             game.replace(withHistory: rawHistory.compactMap(Player.init(rawValue:)))
@@ -182,7 +201,16 @@ final class WatchScoreStore: NSObject, ObservableObject {
             playerTwoColorID = colorID
         }
 
-        eventText = game.winner.map { "Game - \(displayName(for: $0))" } ?? "Synced"
+        if let rawMode = payload[ConnectivityKey.watchMode] as? String,
+           let mode = WatchMode(rawValue: rawMode) {
+            defaultWatchMode = mode
+        }
+
+        if let swipeEnabled = payload[ConnectivityKey.watchSwipeEnabled] as? Bool {
+            watchSwipeEnabled = swipeEnabled
+        }
+
+        eventText = winEventText() ?? "Synced"
     }
 
     private func handleConnectivityPayload(_ payload: [String: Any]) {
@@ -193,20 +221,70 @@ final class WatchScoreStore: NSObject, ObservableObject {
         applyPhoneSnapshot(from: payload)
     }
 
+    private func playUndoHaptic() {
+        cancelPendingHaptic()
+        WKInterfaceDevice.current().play(.notification)
+    }
+
+    private func winEventText() -> String? {
+        if let matchWinner = game.matchWinner {
+            return "Match - \(displayName(for: matchWinner))"
+        }
+
+        if let gameWinner = game.gameWinner {
+            return "Game - \(displayName(for: gameWinner))"
+        }
+
+        return nil
+    }
+
     private func playPointHaptic(for player: Player) {
+        cancelPendingHaptic()
+
         switch player {
         case .playerOne:
             WKInterfaceDevice.current().play(.success)
         case .playerTwo:
             WKInterfaceDevice.current().play(.directionUp)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) {
-                WKInterfaceDevice.current().play(.directionUp)
+            pendingHapticTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: Self.doublePointHapticDelay)
+
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                await MainActor.run {
+                    WKInterfaceDevice.current().play(.directionUp)
+                    self?.pendingHapticTask = nil
+                }
             }
         }
     }
 
+    private func cancelPendingHaptic() {
+        pendingHapticTask?.cancel()
+        pendingHapticTask = nil
+    }
+
     private static func limitedName(_ name: String) -> String {
         String(name.prefix(18))
+    }
+
+    private static func makeInitialSequence() -> Int64 {
+        Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
+    private static func sequenceValue(from payload: [String: Any], key: String) -> Int64? {
+        switch payload[key] {
+        case let value as Int64:
+            return value
+        case let value as Int:
+            return Int64(value)
+        case let value as NSNumber:
+            return value.int64Value
+        default:
+            return nil
+        }
     }
 }
 
@@ -220,6 +298,7 @@ extension WatchScoreStore: WCSessionDelegate {
 
         Task { @MainActor [weak self] in
             self?.isPhoneReachable = isReachable
+            self?.handleConnectivityPayload(session.receivedApplicationContext)
         }
     }
 
@@ -253,12 +332,16 @@ private enum ConnectivityKey {
     static let phoneSequence = "phoneSequence"
     static let action = "action"
     static let player = "player"
+    static let winningScore = "winningScore"
+    static let gamesToWin = "gamesToWin"
     static let playerOneScore = "playerOneScore"
     static let playerTwoScore = "playerTwoScore"
     static let playerOneName = "playerOneName"
     static let playerTwoName = "playerTwoName"
     static let playerOneColorID = "playerOneColorID"
     static let playerTwoColorID = "playerTwoColorID"
+    static let watchMode = "watchMode"
+    static let watchSwipeEnabled = "watchSwipeEnabled"
     static let history = "history"
 }
 

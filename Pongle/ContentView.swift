@@ -139,7 +139,9 @@ struct ContentView: View {
                 winner: store.game.winner,
                 usesHorizontalLayout: isWide,
                 isCompact: isScoreboardCompact,
-                compactHeight: compactHeight
+                compactHeight: compactHeight,
+                isIphoneTapInputEnabled: store.settings.iphoneTapInputEnabled,
+                onAddPoint: store.addPoint
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .opacity(isScoreboardContentVisible ? 1 : 0)
@@ -220,14 +222,34 @@ private struct ScoreboardPanels: View {
     let usesHorizontalLayout: Bool
     let isCompact: Bool
     let compactHeight: CGFloat
+    let isIphoneTapInputEnabled: Bool
+    let onAddPoint: (Player) -> Void
 
     var body: some View {
-        Group {
-            if isCompact {
-                panelLayout(usesHorizontalLayout: true, isCompact: true)
-                    .frame(height: compactHeight)
-            } else {
-                panelLayout(usesHorizontalLayout: usesHorizontalLayout, isCompact: false)
+        VStack(spacing: isCompact ? 8 : 10) {
+            Group {
+                if isCompact {
+                    panelLayout(usesHorizontalLayout: true, isCompact: true)
+                        .frame(height: compactHeight)
+                } else {
+                    panelLayout(usesHorizontalLayout: usesHorizontalLayout, isCompact: false)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            if isIphoneTapInputEnabled {
+                Label("Testing mode: iPhone tap input enabled", systemImage: "hand.tap")
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(Color.pongleAccent.opacity(0.92))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.pongleAccent.opacity(0.12)))
+                    .overlay {
+                        Capsule()
+                            .stroke(Color.pongleAccent.opacity(0.24), lineWidth: 1)
+                    }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -239,7 +261,8 @@ private struct ScoreboardPanels: View {
             : AnyLayout(VStackLayout(alignment: .center, spacing: 16))
 
         return layout {
-            PlayerScorePanel(
+            playerScorePanel(
+                player: .playerOne,
                 playerName: playerOneName,
                 score: playerOneScore,
                 accent: playerOneAccent,
@@ -247,7 +270,8 @@ private struct ScoreboardPanels: View {
                 isCompact: isCompact
             )
 
-            PlayerScorePanel(
+            playerScorePanel(
+                player: .playerTwo,
                 playerName: playerTwoName,
                 score: playerTwoScore,
                 accent: playerTwoAccent,
@@ -257,6 +281,38 @@ private struct ScoreboardPanels: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
+
+    @ViewBuilder
+    private func playerScorePanel(
+        player: Player,
+        playerName: String,
+        score: Int,
+        accent: Color,
+        isWinner: Bool,
+        isCompact: Bool
+    ) -> some View {
+        let panel = PlayerScorePanel(
+            playerName: playerName,
+            score: score,
+            accent: accent,
+            isWinner: isWinner,
+            isCompact: isCompact,
+            isTapInputEnabled: isIphoneTapInputEnabled
+        )
+
+        if isIphoneTapInputEnabled {
+            Button {
+                onAddPoint(player)
+            } label: {
+                panel
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .accessibilityHint("Adds one point for \(playerName)")
+        } else {
+            panel
+        }
+    }
 }
 
 private struct PlayerScorePanel: View {
@@ -265,6 +321,7 @@ private struct PlayerScorePanel: View {
     let accent: Color
     let isWinner: Bool
     let isCompact: Bool
+    let isTapInputEnabled: Bool
 
     private var scoreText: String {
         String(format: "%02d", min(score, 99))
@@ -308,9 +365,25 @@ private struct PlayerScorePanel: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isWinner ? accent : Color.white.opacity(0.1), lineWidth: isWinner ? 2 : 1)
+                .stroke(borderColor, lineWidth: borderWidth)
         }
         .shadow(color: accent.opacity(isWinner ? 0.2 : 0.06), radius: isWinner ? 16 : 8, x: 0, y: 0)
+    }
+
+    private var borderColor: Color {
+        if isWinner {
+            return accent
+        }
+
+        if isTapInputEnabled {
+            return accent.opacity(0.42)
+        }
+
+        return Color.white.opacity(0.1)
+    }
+
+    private var borderWidth: CGFloat {
+        isWinner || isTapInputEnabled ? 2 : 1
     }
 }
 

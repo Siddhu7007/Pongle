@@ -13,11 +13,11 @@ final class PhoneScoreStore: NSObject, ObservableObject {
 
     private let announcer = ScoreAnnouncer()
     private var session: WCSession?
-    private var lastAppliedWatchSequence = 0
+    private var lastAppliedWatchSequence: Int64 = 0
     // Seed with wall-clock ms so sequences stay monotonic across phone relaunches.
     // Prevents the watch from dropping a fresh snapshot because it remembers a
     // higher sequence from a previous session.
-    private var phoneSequence = Int(Date().timeIntervalSince1970 * 1000)
+    private var phoneSequence = PhoneScoreStore.makeInitialSequence()
     private var cancellables: Set<AnyCancellable> = []
 
     init(settings: AppSettings, activatesConnectivity: Bool = true) {
@@ -61,6 +61,10 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         return "\(base) · Games \(game.playerOneGames)–\(game.playerTwoGames)"
     }
 
+    func addPoint(to player: Player) {
+        _ = addPoint(to: player, broadcastsToWatch: true)
+    }
+
     func undo() {
         guard game.canUndo else {
             return
@@ -101,7 +105,9 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             settings.$playerOneName.dropFirst().map { _ in }.eraseToAnyPublisher(),
             settings.$playerTwoName.dropFirst().map { _ in }.eraseToAnyPublisher(),
             settings.$playerOneBatColor.dropFirst().map { _ in }.eraseToAnyPublisher(),
-            settings.$playerTwoBatColor.dropFirst().map { _ in }.eraseToAnyPublisher()
+            settings.$playerTwoBatColor.dropFirst().map { _ in }.eraseToAnyPublisher(),
+            settings.$watchMode.dropFirst().map { _ in }.eraseToAnyPublisher(),
+            settings.$watchSwipeEnabled.dropFirst().map { _ in }.eraseToAnyPublisher()
         )
         // `@Published` fires during `willSet`; hop to the next runloop so the
         // broadcast reads the post-mutation value instead of the stale one.
@@ -116,8 +122,10 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     }
 
     private func applySettingsToGame(resetOnChange: Bool) {
-        game.winningScore = settings.pointsToWin.rawValue
-        game.gamesToWin = settings.matchLength.gamesToWin
+        game.configure(
+            winningScore: settings.pointsToWin.rawValue,
+            gamesToWin: settings.matchLength.gamesToWin
+        )
 
         if resetOnChange {
             game.reset()
@@ -127,7 +135,7 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     }
 
     private func applyRemoteScoreEvent(from message: [String: Any]) {
-        guard let watchSequence = message[ConnectivityKey.watchSequence] as? Int,
+        guard let watchSequence = Self.sequenceValue(from: message, key: ConnectivityKey.watchSequence),
               watchSequence > lastAppliedWatchSequence,
               let rawAction = message[ConnectivityKey.action] as? String,
               let action = ScoreAction(rawValue: rawAction) else {
@@ -142,22 +150,43 @@ final class PhoneScoreStore: NSObject, ObservableObject {
                   let player = Player(rawValue: rawPlayer) else {
                 return
             }
-            game.addPoint(for: player)
-            announceCurrentScore()
+            _ = addPoint(to: player, broadcastsToWatch: false)
 
         case .undo:
+            let previousHistoryCount = game.history.count
             game.undoLastPoint()
-            announceCurrentScore()
+            if game.history.count < previousHistoryCount {
+                announceCurrentScore()
+            }
 
         case .reset:
             game.reset()
             announcer.stop()
         }
+
+        broadcastCurrentStateToWatch()
+    }
+
+    @discardableResult
+    private func addPoint(to player: Player, broadcastsToWatch: Bool) -> Bool {
+        let previousHistoryCount = game.history.count
+        game.addPoint(for: player)
+        guard game.history.count > previousHistoryCount else {
+            return false
+        }
+
+        announceCurrentScore()
+
+        if broadcastsToWatch {
+            broadcastCurrentStateToWatch()
+        }
+
+        return true
     }
 
     private func applyRemoteSnapshot(from message: [String: Any]) {
         guard (message[ConnectivityKey.source] as? String) == ConnectivitySource.watch,
-              let watchSequence = message[ConnectivityKey.watchSequence] as? Int,
+              let watchSequence = Self.sequenceValue(from: message, key: ConnectivityKey.watchSequence),
               watchSequence > lastAppliedWatchSequence else {
             return
         }
@@ -218,12 +247,16 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             ConnectivityKey.kind: ConnectivityKind.stateSnapshot,
             ConnectivityKey.source: ConnectivitySource.phone,
             ConnectivityKey.phoneSequence: phoneSequence,
+            ConnectivityKey.winningScore: game.winningScore,
+            ConnectivityKey.gamesToWin: game.gamesToWin,
             ConnectivityKey.playerOneScore: game.playerOneScore,
             ConnectivityKey.playerTwoScore: game.playerTwoScore,
             ConnectivityKey.playerOneName: settings.displayName(for: .playerOne),
             ConnectivityKey.playerTwoName: settings.displayName(for: .playerTwo),
             ConnectivityKey.playerOneColorID: settings.playerOneBatColor.rawValue,
             ConnectivityKey.playerTwoColorID: settings.playerTwoBatColor.rawValue,
+            ConnectivityKey.watchMode: settings.watchMode.rawValue,
+            ConnectivityKey.watchSwipeEnabled: settings.watchSwipeEnabled,
             ConnectivityKey.history: game.history.map(\.rawValue)
         ]
 
@@ -246,6 +279,23 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             Task { @MainActor in
                 self?.lastConnectivityError = error.localizedDescription
             }
+        }
+    }
+
+    private static func makeInitialSequence() -> Int64 {
+        Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
+    private static func sequenceValue(from payload: [String: Any], key: String) -> Int64? {
+        switch payload[key] {
+        case let value as Int64:
+            return value
+        case let value as Int:
+            return Int64(value)
+        case let value as NSNumber:
+            return value.int64Value
+        default:
+            return nil
         }
     }
 }
@@ -355,12 +405,16 @@ private enum ConnectivityKey {
     static let phoneSequence = "phoneSequence"
     static let action = "action"
     static let player = "player"
+    static let winningScore = "winningScore"
+    static let gamesToWin = "gamesToWin"
     static let playerOneScore = "playerOneScore"
     static let playerTwoScore = "playerTwoScore"
     static let playerOneName = "playerOneName"
     static let playerTwoName = "playerTwoName"
     static let playerOneColorID = "playerOneColorID"
     static let playerTwoColorID = "playerTwoColorID"
+    static let watchMode = "watchMode"
+    static let watchSwipeEnabled = "watchSwipeEnabled"
     static let history = "history"
 }
 

@@ -34,15 +34,8 @@ struct GameState: Equatable {
     var playerOneGames: Int { tally.playerOneGames }
     var playerTwoGames: Int { tally.playerTwoGames }
 
-    /// Winner of the current in-progress game, if its points reached the threshold.
-    /// When a game closes in a multi-game match, its points are rolled into the games tally
-    /// and this becomes nil again until the next game ends.
     var gameWinner: Player? { tally.currentGameWinner }
-
-    /// Winner of the whole match (first to `gamesToWin`), or nil if match still in progress.
     var matchWinner: Player? { tally.matchWinner }
-
-    /// Combined "is something won right now?" — matches previous `winner` API so the UI can highlight.
     var winner: Player? { matchWinner ?? gameWinner }
 
     var canUndo: Bool {
@@ -51,6 +44,11 @@ struct GameState: Equatable {
 
     var hasScore: Bool {
         !history.isEmpty
+    }
+
+    mutating func configure(winningScore: Int, gamesToWin: Int) {
+        self.winningScore = winningScore
+        self.gamesToWin = gamesToWin
     }
 
     mutating func addPoint(for player: Player) {
@@ -72,8 +70,6 @@ struct GameState: Equatable {
         history = newHistory
     }
 
-    // MARK: - Tally (replayed from history)
-
     private struct Tally {
         var playerOnePoints = 0
         var playerTwoPoints = 0
@@ -91,8 +87,6 @@ struct GameState: Equatable {
                 break
             }
 
-            // If the previous point closed a game in a multi-game match, roll it now
-            // so this new point starts the next game from 0–0.
             if t.currentGameWinner != nil && gamesToWin > 1 {
                 switch t.currentGameWinner! {
                 case .playerOne: t.playerOneGames += 1
@@ -123,7 +117,6 @@ struct GameState: Equatable {
             )
         }
 
-        // Final match-close check (covers the single-game case and the final game of a match).
         if let gw = t.currentGameWinner, t.matchWinner == nil {
             if gamesToWin <= 1 {
                 t.matchWinner = gw
