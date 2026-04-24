@@ -181,3 +181,52 @@ Note: Apple warns against firing watch haptics repeatedly in quick succession. H
 3. Optional service indication
 4. Headphone-button input experiments
 5. Immersive visual-table UI theme (client's sketch concept)
+
+---
+
+## Flic iOS SDK Integration PRD
+
+**Goal.** Add Flic physical-button input as a second scoring source beside Apple Watch while keeping phone scoring, audio, and Watch mirroring on the same canonical event path.
+
+**SDK choice.** Use the current official Flic 2 / Flic Duo SDK at `https://github.com/50ButtonsEach/flic2lib-ios`, pinned to revision `416d4cc5192ae1b14e525fac721016ca5cc3a0eb` (`1.5.0`). The older `fliclib-ios` URL-callback flow is legacy Flic 1 only.
+
+**Event model.**
+
+| Flic action | Pongle event |
+| --- | --- |
+| Single click | `ScoreEvent.point(player: .playerOne)` |
+| Double click | `ScoreEvent.point(player: .playerTwo)` |
+| Hold | `ScoreEvent.undo` |
+
+**Implementation requirements.**
+- Route Watch, iPhone tap, and Flic input through `PhoneScoreStore.apply(_:source:)`.
+- Configure `FLICManager` only after the user adds Flic once, then restore early on later launches when Flic input is persisted.
+- Pair through `scanForButtons(stateChangeHandler:completion:)` and restore through `managerDidRestoreState(_:)`.
+- Set `triggerMode = .clickAndDoubleClickAndHold`.
+- Read click events with `buttonEvent.isSingleOrDoubleClickOrHold`.
+- Ignore Flic Duo swipe/gesture events for this MVP.
+- Ignore queued Flic events older than 2 seconds.
+- Deduplicate events by button identifier, event counter, and event type.
+- Broadcast every accepted Flic score event back to the Watch with the existing phone state sync.
+
+**UI requirements.**
+- Replace the disabled "Flic Buttons - Coming Soon" settings row with a live Flic setup row.
+- Show states: Not Set Up, Scanning, Ready, Disconnected, Bluetooth Off, Unauthorized, Unsupported, Error.
+- Provide Add Flic, Retry, and Remove Flic controls.
+- Do not add onboarding or block launch when Flic is not configured.
+
+**Configuration requirements.**
+- Link Swift package product `flic2lib` into the iOS target only.
+- Add Bluetooth usage text: `Connect your Flic button to score points during a match.`
+- Add `bluetooth-central` background mode.
+- Set `CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES = YES`.
+
+**Manual acceptance checklist.**
+- Pair via Add Flic.
+- Single click adds Player 1.
+- Double click adds Player 2.
+- Hold undoes the latest point.
+- Rapid repeated accepted clicks do not drop SDK events.
+- iPhone score, audio, and Watch score glance update after Flic input.
+- Relaunch restores the paired button.
+- Background/lock-screen behavior works best-effort with Core Bluetooth background mode; force-quit is not guaranteed.

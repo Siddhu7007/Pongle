@@ -22,6 +22,12 @@ enum ScoreAction: String {
     case reset
 }
 
+enum ScoreEvent: Equatable {
+    case point(player: Player)
+    case undo
+    case reset
+}
+
 struct GameState: Equatable {
     var winningScore: Int = 11
     var gamesToWin: Int = 2

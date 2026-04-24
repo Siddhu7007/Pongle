@@ -10,6 +10,9 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     @Published private(set) var lastConnectivityError: String?
 
     let settings: AppSettings
+    lazy var flicInput = FlicInputController(settings: settings) { [weak self] event in
+        self?.apply(event, source: .flic)
+    }
 
     private let announcer = ScoreAnnouncer()
     private var session: WCSession?
@@ -26,6 +29,7 @@ final class PhoneScoreStore: NSObject, ObservableObject {
 
         applySettingsToGame(resetOnChange: false)
         observeSettings()
+        flicInput.restoreIfEnabled()
 
         guard activatesConnectivity, WCSession.isSupported() else {
             return
@@ -62,23 +66,15 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     }
 
     func addPoint(to player: Player) {
-        _ = addPoint(to: player, broadcastsToWatch: true)
+        apply(.point(player: player), source: .iphone)
     }
 
     func undo() {
-        guard game.canUndo else {
-            return
-        }
-
-        game.undoLastPoint()
-        announceCurrentScore()
-        broadcastCurrentStateToWatch()
+        apply(.undo, source: .iphone)
     }
 
     func reset() {
-        game.reset()
-        announcer.stop()
-        broadcastCurrentStateToWatch()
+        apply(.reset, source: .iphone)
     }
 
     func toggleAudio() {
@@ -88,6 +84,36 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             announcer.stop()
         }
         objectWillChange.send()
+    }
+
+    @discardableResult
+    func apply(_ event: ScoreEvent, source _: ScoreEventSource) -> Bool {
+        let accepted: Bool
+
+        switch event {
+        case .point(let player):
+            accepted = addPoint(to: player)
+
+        case .undo:
+            let previousHistoryCount = game.history.count
+            game.undoLastPoint()
+            accepted = game.history.count < previousHistoryCount
+
+            if accepted {
+                announceCurrentScore()
+            }
+
+        case .reset:
+            game.reset()
+            announcer.stop()
+            accepted = true
+        }
+
+        if accepted {
+            broadcastCurrentStateToWatch()
+        }
+
+        return accepted
     }
 
     private func observeSettings() {
@@ -150,25 +176,18 @@ final class PhoneScoreStore: NSObject, ObservableObject {
                   let player = Player(rawValue: rawPlayer) else {
                 return
             }
-            _ = addPoint(to: player, broadcastsToWatch: false)
+            apply(.point(player: player), source: .watch)
 
         case .undo:
-            let previousHistoryCount = game.history.count
-            game.undoLastPoint()
-            if game.history.count < previousHistoryCount {
-                announceCurrentScore()
-            }
+            apply(.undo, source: .watch)
 
         case .reset:
-            game.reset()
-            announcer.stop()
+            apply(.reset, source: .watch)
         }
-
-        broadcastCurrentStateToWatch()
     }
 
     @discardableResult
-    private func addPoint(to player: Player, broadcastsToWatch: Bool) -> Bool {
+    private func addPoint(to player: Player) -> Bool {
         let previousHistoryCount = game.history.count
         game.addPoint(for: player)
         guard game.history.count > previousHistoryCount else {
@@ -176,11 +195,6 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         }
 
         announceCurrentScore()
-
-        if broadcastsToWatch {
-            broadcastCurrentStateToWatch()
-        }
-
         return true
     }
 
@@ -426,4 +440,10 @@ private enum ConnectivityKind {
 private enum ConnectivitySource {
     static let phone = "phone"
     static let watch = "watch"
+}
+
+enum ScoreEventSource {
+    case iphone
+    case watch
+    case flic
 }

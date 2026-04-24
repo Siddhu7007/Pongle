@@ -111,6 +111,7 @@ final class AppSettings: ObservableObject {
         static let watchMode = "pongle.watchMode"
         static let watchSwipeEnabled = "pongle.watchSwipeEnabled"
         static let iphoneTapInputEnabled = "iphoneTapInputEnabled"
+        static let flicInputEnabled = "pongle.flicInputEnabled"
     }
 
     @Published var pointsToWin: PointsToWin {
@@ -173,6 +174,10 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(iphoneTapInputEnabled, forKey: Key.iphoneTapInputEnabled) }
     }
 
+    @Published var flicInputEnabled: Bool {
+        didSet { UserDefaults.standard.set(flicInputEnabled, forKey: Key.flicInputEnabled) }
+    }
+
     init() {
         let defaults = UserDefaults.standard
 
@@ -195,6 +200,7 @@ final class AppSettings: ObservableObject {
         self.watchMode = WatchMode(rawValue: defaults.string(forKey: Key.watchMode) ?? "") ?? .inputPad
         self.watchSwipeEnabled = (defaults.object(forKey: Key.watchSwipeEnabled) as? Bool) ?? true
         self.iphoneTapInputEnabled = (defaults.object(forKey: Key.iphoneTapInputEnabled) as? Bool) ?? false
+        self.flicInputEnabled = (defaults.object(forKey: Key.flicInputEnabled) as? Bool) ?? false
     }
 
     var voiceDisplayName: String {
@@ -253,6 +259,7 @@ final class AppSettings: ObservableObject {
 struct MatchControlsDock: View {
     @EnvironmentObject var settings: AppSettings
     let isWatchConnected: Bool
+    @ObservedObject var flicInput: FlicInputController
     let onRulesChanged: () -> Void
 
     @State private var isVoicePickerPresented = false
@@ -358,11 +365,7 @@ struct MatchControlsDock: View {
 
                 divider
 
-                SettingsIconBadgeRow(
-                    icon: "button.programmable",
-                    title: "Flic Buttons",
-                    badge: "Coming Soon"
-                )
+                FlicControlRow(controller: flicInput)
 
                 divider
 
@@ -755,6 +758,211 @@ private struct WatchModeMiniPreview: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .fill(Color.white.opacity(0.08))
         )
+    }
+}
+
+private struct FlicControlRow: View {
+    @ObservedObject var controller: FlicInputController
+    @State private var isShowingRemoveConfirmation = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "button.programmable")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.58))
+                    .frame(width: 22)
+                    .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Flic Buttons")
+                        .font(.system(.subheadline, design: .rounded, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.88))
+
+                    Text(detailText)
+                        .font(.system(.caption, design: .rounded, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(statusText)
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(statusColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(statusColor.opacity(0.13)))
+                    .overlay(Capsule().stroke(statusColor.opacity(0.32), lineWidth: 1))
+            }
+
+            if !controller.buttons.isEmpty {
+                VStack(spacing: 6) {
+                    ForEach(controller.buttons) { button in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(button.isReady ? Color.green : Color.pongleAccent)
+                                .frame(width: 7, height: 7)
+                            Text(button.nickname?.isEmpty == false ? button.nickname! : button.serialNumber)
+                                .font(.system(.caption, design: .rounded, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.76))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.72)
+                            Spacer()
+                            Text(button.stateDescription)
+                                .font(.system(.caption2, design: .rounded, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.46))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.white.opacity(0.04))
+                        )
+                    }
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button(action: primaryAction) {
+                    Label(primaryButtonTitle, systemImage: primaryButtonIcon)
+                        .font(.system(.caption, design: .rounded, weight: .bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.black)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.pongleAccent.opacity(primaryButtonEnabled ? 1 : 0.45))
+                )
+                .disabled(!primaryButtonEnabled)
+
+                if controller.hasButtons {
+                    Button(role: .destructive) {
+                        isShowingRemoveConfirmation = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.red.opacity(0.92))
+                            .frame(width: 42, height: 34)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(Color.white.opacity(0.07))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove Flic")
+                }
+            }
+        }
+        .padding(.vertical, 8)
+        .alert("Remove Flic?", isPresented: $isShowingRemoveConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Remove", role: .destructive) {
+                controller.removeAllButtons()
+            }
+        } message: {
+            Text("Pongle will forget paired Flic buttons. You can add them again later.")
+        }
+    }
+
+    private var statusText: String {
+        switch controller.status {
+        case .notSetUp:
+            "Not Set Up"
+        case .restoring:
+            "Restoring"
+        case .scanning:
+            "Scanning"
+        case .ready(let count):
+            count == 1 ? "Ready" : "\(count) Ready"
+        case .disconnected:
+            "Disconnected"
+        case .bluetoothOff:
+            "Bluetooth Off"
+        case .unauthorized:
+            "Unauthorized"
+        case .unsupported:
+            "Unsupported"
+        case .error:
+            "Error"
+        }
+    }
+
+    private var detailText: String {
+        switch controller.status {
+        case .notSetUp:
+            "Single click scores you, double click scores opponent, hold undoes."
+        case .restoring:
+            "Restoring paired Flic buttons."
+        case .scanning(let message):
+            message
+        case .ready:
+            "Flic input is active for this match."
+        case .disconnected(let count):
+            count == 1 ? "Button is paired but not connected." : "\(count) buttons are paired but not connected."
+        case .bluetoothOff:
+            "Turn on Bluetooth to use Flic input."
+        case .unauthorized:
+            "Allow Bluetooth access in Settings to use Flic."
+        case .unsupported:
+            "This device or OS does not support Flic input."
+        case .error(let message):
+            message
+        }
+    }
+
+    private var statusColor: Color {
+        switch controller.status {
+        case .ready:
+            .green
+        case .scanning, .restoring:
+            .pongleAccent
+        case .notSetUp, .disconnected:
+            .white.opacity(0.58)
+        case .bluetoothOff, .unauthorized, .unsupported, .error:
+            .red.opacity(0.86)
+        }
+    }
+
+    private var primaryButtonTitle: String {
+        switch controller.status {
+        case .notSetUp:
+            "Add Flic"
+        case .scanning:
+            "Scanning"
+        default:
+            "Retry"
+        }
+    }
+
+    private var primaryButtonIcon: String {
+        switch controller.status {
+        case .notSetUp:
+            "plus.circle.fill"
+        case .scanning:
+            "antenna.radiowaves.left.and.right"
+        default:
+            "arrow.clockwise"
+        }
+    }
+
+    private var primaryButtonEnabled: Bool {
+        !controller.isScanning
+    }
+
+    private func primaryAction() {
+        switch controller.status {
+        case .notSetUp:
+            controller.scan()
+        default:
+            controller.retry()
+        }
     }
 }
 

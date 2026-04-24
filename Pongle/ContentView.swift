@@ -57,6 +57,7 @@ struct ContentView: View {
 
                     MatchControlsDock(
                         isWatchConnected: store.isWatchReachable,
+                        flicInput: store.flicInput,
                         onRulesChanged: { store.reset() }
                     )
                 }
@@ -129,20 +130,39 @@ struct ContentView: View {
             let isWide = proxy.size.width > proxy.size.height
             let compactHeight = compactScoreboardHeight(for: proxy.size)
 
-            ScoreboardPanels(
-                playerOneName: store.settings.displayName(for: .playerOne),
-                playerTwoName: store.settings.displayName(for: .playerTwo),
-                playerOneScore: store.game.playerOneScore,
-                playerTwoScore: store.game.playerTwoScore,
-                playerOneAccent: store.settings.batColor(for: .playerOne).accentColor,
-                playerTwoAccent: store.settings.batColor(for: .playerTwo).accentColor,
-                winner: store.game.winner,
-                usesHorizontalLayout: isWide,
-                isCompact: isScoreboardCompact,
-                compactHeight: compactHeight,
-                isIphoneTapInputEnabled: store.settings.iphoneTapInputEnabled,
-                onAddPoint: store.addPoint
-            )
+            Group {
+                if isScoreboardCompact {
+                    ScoreboardPanels(
+                        playerOneName: store.settings.displayName(for: .playerOne),
+                        playerTwoName: store.settings.displayName(for: .playerTwo),
+                        playerOneScore: store.game.playerOneScore,
+                        playerTwoScore: store.game.playerTwoScore,
+                        playerOneAccent: store.settings.batColor(for: .playerOne).accentColor,
+                        playerTwoAccent: store.settings.batColor(for: .playerTwo).accentColor,
+                        winner: store.game.winner,
+                        usesHorizontalLayout: isWide,
+                        isCompact: true,
+                        compactHeight: compactHeight,
+                        isIphoneTapInputEnabled: store.settings.iphoneTapInputEnabled,
+                        onAddPoint: store.addPoint
+                    )
+                } else {
+                    HeroScoreboardScene(
+                        availableSize: proxy.size,
+                        topPlayerName: heroDisplayName(for: .playerTwo),
+                        topPlayerScore: store.game.playerTwoScore,
+                        topPlayerAccent: store.settings.batColor(for: .playerTwo).accentColor,
+                        topPlayerBatImageName: store.settings.batColor(for: .playerTwo).imageName,
+                        bottomPlayerName: heroDisplayName(for: .playerOne),
+                        bottomPlayerScore: store.game.playerOneScore,
+                        bottomPlayerAccent: store.settings.batColor(for: .playerOne).accentColor,
+                        bottomPlayerBatImageName: store.settings.batColor(for: .playerOne).imageName,
+                        winner: store.game.winner,
+                        isIphoneTapInputEnabled: store.settings.iphoneTapInputEnabled,
+                        onAddPoint: store.addPoint
+                    )
+                }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .opacity(isScoreboardContentVisible ? 1 : 0)
             .scaleEffect(isScoreboardContentVisible ? 1 : 0.985, anchor: .top)
@@ -152,7 +172,8 @@ struct ContentView: View {
                     isTransitioning: isScoreboardTransitioning,
                     action: toggleScoreboardMode
                 )
-                .padding(isScoreboardCompact ? 8 : 14)
+                .padding(.top, isScoreboardCompact ? 8 : 8)
+                .padding(.trailing, isScoreboardCompact ? 8 : 6)
                 .zIndex(20)
             }
         }
@@ -165,6 +186,15 @@ struct ContentView: View {
         }
 
         return min(max(size.width * 0.58, 224), 308)
+    }
+
+    private func heroDisplayName(for player: Player) -> String {
+        let configuredName = store.settings.displayName(for: player)
+        guard configuredName == player.displayName else {
+            return configuredName
+        }
+
+        return player == .playerOne ? "You" : "Opponent"
     }
 
     private func toggleScoreboardMode() {
@@ -211,6 +241,278 @@ private struct ScoreboardBackground: View {
     }
 }
 
+private struct HeroScoreboardScene: View {
+    let availableSize: CGSize
+    let topPlayerName: String
+    let topPlayerScore: Int
+    let topPlayerAccent: Color
+    let topPlayerBatImageName: String
+    let bottomPlayerName: String
+    let bottomPlayerScore: Int
+    let bottomPlayerAccent: Color
+    let bottomPlayerBatImageName: String
+    let winner: Player?
+    let isIphoneTapInputEnabled: Bool
+    let onAddPoint: (Player) -> Void
+
+    var body: some View {
+        let tableAspectRatio = 577.0 / 433.0
+        let labelFontSize = min(max(availableSize.width * 0.04, 19), 27)
+        let scoreFont = min(max(availableSize.width * 0.158, 102), 148)
+        let badgeSide = min(max(scoreFont * 0.98, 96), 136)
+        let scoreColumnWidth = min(max(availableSize.width * 0.19, 114), 156)
+        let clusterWidth = min(max(badgeSide + scoreColumnWidth + 44, 296), 472)
+        let railWidth = min(max(availableSize.width * 0.8, 272), 700)
+        let tableFootprintWidth = min(max(availableSize.width * 0.9, 356), 640)
+        let baseTableVisualWidth = min(max(tableFootprintWidth + 92, availableSize.width * 1.17), 800)
+        let currentTableVisualWidth = min(baseTableVisualWidth * 1.25, 1120)
+        let tableVisualWidth = min(currentTableVisualWidth * 1.368, 1512)
+        let tableImageHeight = tableVisualWidth / tableAspectRatio
+        let currentTableImageHeight = currentTableVisualWidth / tableAspectRatio
+        // Table PNG has ~10% transparent padding at the top and ~17% at the bottom. Lift
+        // the image so the visible top sits just below the opponent rail while the lower
+        // rail only clips the feet. Both rails are drawn above the table.
+        let tableBeamGap = min(max(availableSize.height * 0.014, 16), 22)
+        let tableFootOverlap = min(max(tableImageHeight * 0.11, 56), 104)
+        let tableTopLift = max(tableImageHeight * 0.10 - tableBeamGap, 0)
+        // Make the table larger while shifting only the table down slightly; the beams
+        // and player panels stay anchored because only the image offset changes here.
+        let tableDrop = currentTableImageHeight * 0.07
+        let tableContainerHeight = max(tableImageHeight * 0.73 - tableFootOverlap, 0)
+        let horizontalPadding = min(max(availableSize.width * 0.006, 0), 6)
+        let playerSpacing = min(max(availableSize.height * 0.004, 2), 6)
+        let bottomRailLift = min(max(availableSize.height * 0.03, 18), 28)
+        let bottomClusterPullUp = min(max(availableSize.height * 0.022, 12), 20)
+
+        VStack(spacing: 0) {
+            HeroPlayerCluster(
+                playerName: topPlayerName,
+                score: topPlayerScore,
+                accent: topPlayerAccent,
+                batImageName: topPlayerBatImageName,
+                isWinner: winner == .playerTwo,
+                badgeSide: badgeSide,
+                labelFontSize: labelFontSize,
+                scoreFont: scoreFont,
+                scoreColumnWidth: scoreColumnWidth,
+                clusterWidth: clusterWidth,
+                isTapInputEnabled: isIphoneTapInputEnabled
+            ) {
+                onAddPoint(.playerTwo)
+            }
+            .padding(.bottom, playerSpacing)
+
+            HeroAccentRail(accent: topPlayerAccent, emphasis: winner == .playerTwo, width: railWidth)
+                .zIndex(2)
+
+            Color.clear
+                .frame(height: tableContainerHeight)
+                .overlay(alignment: .top) {
+                    Image("Table")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: tableVisualWidth)
+                        .shadow(color: .black.opacity(0.42), radius: 12, x: 0, y: 6)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .offset(y: tableDrop - tableTopLift)
+                }
+                .zIndex(1)
+
+            HeroAccentRail(accent: bottomPlayerAccent, emphasis: winner == .playerOne, width: railWidth)
+                .padding(.top, -bottomRailLift)
+                .padding(.bottom, playerSpacing)
+                .zIndex(2)
+
+            HeroPlayerCluster(
+                playerName: bottomPlayerName,
+                score: bottomPlayerScore,
+                accent: bottomPlayerAccent,
+                batImageName: bottomPlayerBatImageName,
+                isWinner: winner == .playerOne,
+                badgeSide: badgeSide,
+                labelFontSize: labelFontSize,
+                scoreFont: scoreFont,
+                scoreColumnWidth: scoreColumnWidth,
+                clusterWidth: clusterWidth,
+                isTapInputEnabled: isIphoneTapInputEnabled
+            ) {
+                onAddPoint(.playerOne)
+            }
+            .padding(.top, -bottomClusterPullUp)
+        }
+        .padding(.horizontal, horizontalPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct HeroPlayerCluster: View {
+    let playerName: String
+    let score: Int
+    let accent: Color
+    let batImageName: String
+    let isWinner: Bool
+    let badgeSide: CGFloat
+    let labelFontSize: CGFloat
+    let scoreFont: CGFloat
+    let scoreColumnWidth: CGFloat
+    let clusterWidth: CGFloat
+    let isTapInputEnabled: Bool
+    let action: () -> Void
+
+    @ViewBuilder
+    var body: some View {
+        if isTapInputEnabled {
+            Button(action: action) {
+                clusterBody
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .accessibilityHint("Adds one point for \(playerName)")
+        } else {
+            clusterBody
+        }
+    }
+
+    private var clusterBody: some View {
+        HStack(alignment: .center, spacing: max(14, badgeSide * 0.11)) {
+            PlayerBatBadge(imageName: batImageName, accent: accent)
+                .frame(width: badgeSide, height: badgeSide)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(playerName)
+                    .font(.system(size: labelFontSize, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(isWinner ? 0.82 : 0.68))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+
+                HeroScoreText(score: score, accent: accent, fontSize: scoreFont, isWinner: isWinner)
+                    .frame(width: scoreColumnWidth, alignment: .leading)
+            }
+
+        }
+        .frame(maxWidth: clusterWidth, minHeight: badgeSide, alignment: .leading)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 1)
+        .accessibilityLabel("\(playerName), score \(min(score, 99))")
+    }
+}
+
+private struct PlayerBatBadge: View {
+    let imageName: String
+    let accent: Color
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .fill(Color.white.opacity(0.035))
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(borderColor, lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.24), radius: 10, x: 0, y: 6)
+            .overlay {
+                Image(imageName)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(9)
+            }
+    }
+
+    private var borderColor: Color {
+        Color.white.opacity(0.14)
+    }
+}
+
+private struct HeroScoreText: View {
+    let score: Int
+    let accent: Color
+    let fontSize: CGFloat
+    let isWinner: Bool
+
+    var body: some View {
+        Text("\(min(score, 99))")
+            .font(.system(size: fontSize, weight: .bold, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+            .tracking(score >= 10 ? -3 : -1)
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [.white, Color.white.opacity(0.82)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .shadow(color: .black.opacity(0.22), radius: 1, x: 0, y: 1)
+            .shadow(color: accent.opacity(isWinner ? 0.1 : 0.04), radius: isWinner ? 6 : 3, x: 0, y: 0)
+    }
+}
+
+private struct HeroAccentRail: View {
+    let accent: Color
+    let emphasis: Bool
+    let width: CGFloat
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(Color.white.opacity(0.05))
+                .frame(width: width, height: 1.1)
+
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            accent.opacity(0),
+                            accent.opacity(emphasis ? 0.1 : 0.08),
+                            accent.opacity(emphasis ? 0.24 : 0.19),
+                            accent.opacity(emphasis ? 0.1 : 0.08),
+                            accent.opacity(0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: width, height: 22)
+                .blur(radius: emphasis ? 28 : 24)
+
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            accent.opacity(0),
+                            accent.opacity(emphasis ? 0.26 : 0.2),
+                            accent.opacity(emphasis ? 0.58 : 0.48),
+                            accent.opacity(emphasis ? 0.26 : 0.2),
+                            accent.opacity(0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: width * 0.9, height: 7)
+                .blur(radius: emphasis ? 8 : 7)
+
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            accent.opacity(0),
+                            accent.opacity(emphasis ? 0.68 : 0.58),
+                            accent.opacity(emphasis ? 1 : 0.94),
+                            accent.opacity(emphasis ? 0.68 : 0.58),
+                            accent.opacity(0)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: width * 0.74, height: 1.6)
+                .shadow(color: accent.opacity(emphasis ? 0.42 : 0.34), radius: emphasis ? 12 : 9, x: 0, y: 0)
+        }
+        .compositingGroup()
+        .frame(height: 18)
+    }
+}
+
 private struct ScoreboardPanels: View {
     let playerOneName: String
     let playerTwoName: String
@@ -236,21 +538,6 @@ private struct ScoreboardPanels: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-
-            if isIphoneTapInputEnabled {
-                Label("Testing mode: iPhone tap input enabled", systemImage: "hand.tap")
-                    .font(.system(.caption, design: .rounded, weight: .bold))
-                    .foregroundStyle(Color.pongleAccent.opacity(0.92))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(Color.pongleAccent.opacity(0.12)))
-                    .overlay {
-                        Capsule()
-                            .stroke(Color.pongleAccent.opacity(0.24), lineWidth: 1)
-                    }
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
