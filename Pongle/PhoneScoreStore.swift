@@ -1,7 +1,10 @@
 @preconcurrency import AVFoundation
 import Combine
 import Foundation
+import os
 @preconcurrency import WatchConnectivity
+
+private let announceLog = Logger(subsystem: "com.pongle.app", category: "ANNOUNCE")
 
 @MainActor
 final class PhoneScoreStore: NSObject, ObservableObject {
@@ -478,6 +481,9 @@ private final class ScoreAnnouncer: NSObject, AVSpeechSynthesizerDelegate {
 
         configureAudioSession()
 
+        let preview = cleaned.joined(separator: " ")
+        announceLog.log("enqueue text=\"\(preview, privacy: .public)\" speaking=\(self.synthesizer.isSpeaking) cancelling=\(self.isCancelling)")
+
         // Latest-state-wins: overwrite any previously pending request and
         // schedule a debounced flush so a burst of rapid score events
         // collapses to a single announcement of the final state.
@@ -498,7 +504,12 @@ private final class ScoreAnnouncer: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func dispatchPending() {
-        guard pendingRequest != nil else { return }
+        guard pendingRequest != nil else {
+            announceLog.log("dispatch skipped: no pending request")
+            return
+        }
+
+        announceLog.log("dispatch speaking=\(self.synthesizer.isSpeaking) cancelling=\(self.isCancelling)")
 
         if synthesizer.isSpeaking {
             // Don't speak in the same runloop tick as stopSpeaking — that
@@ -511,8 +522,12 @@ private final class ScoreAnnouncer: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func requestCancel() {
-        guard !isCancelling else { return }
+        guard !isCancelling else {
+            announceLog.log("requestCancel skipped: already cancelling")
+            return
+        }
         isCancelling = true
+        announceLog.log("requestCancel: stopSpeaking(.immediate)")
         synthesizer.stopSpeaking(at: .immediate)
 
         // Watchdog: AVSpeechSynthesizer occasionally fails to deliver
@@ -525,6 +540,7 @@ private final class ScoreAnnouncer: NSObject, AVSpeechSynthesizerDelegate {
             await MainActor.run {
                 guard let self else { return }
                 if self.isCancelling {
+                    announceLog.error("WATCHDOG fired — didCancel never arrived; forcing flush")
                     self.isCancelling = false
                     self.flush()
                 }
@@ -537,8 +553,13 @@ private final class ScoreAnnouncer: NSObject, AVSpeechSynthesizerDelegate {
         watchdogTask = nil
         isCancelling = false
 
-        guard let request = pendingRequest else { return }
+        guard let request = pendingRequest else {
+            announceLog.log("flush skipped: no pending request")
+            return
+        }
         pendingRequest = nil
+        let flushPreview = request.segments.joined(separator: " ")
+        announceLog.log("flush speaking text=\"\(flushPreview, privacy: .public)\"")
 
         let utterances = request.segments.enumerated().map { index, segment -> AVSpeechUtterance in
             let utterance = AVSpeechUtterance(string: segment)
@@ -556,6 +577,7 @@ private final class ScoreAnnouncer: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func stop() {
+        announceLog.log("stop()")
         debounceTask?.cancel()
         debounceTask = nil
         watchdogTask?.cancel()
@@ -566,6 +588,7 @@ private final class ScoreAnnouncer: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func refresh() {
+        announceLog.log("refresh() — rebuilding synthesizer")
         // Hard reset: rebuild the synthesizer to recover from any wedged
         // internal state (e.g. when toggling Announcements OFF/ON after a
         // rapid-input lockup).
@@ -612,12 +635,14 @@ private final class ScoreAnnouncer: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     nonisolated func speechSynthesizer(_: AVSpeechSynthesizer, didCancel _: AVSpeechUtterance) {
+        announceLog.log("delegate didCancel")
         Task { @MainActor [weak self] in
             self?.handleSpeechFinishedOrCancelled()
         }
     }
 
     nonisolated func speechSynthesizer(_: AVSpeechSynthesizer, didFinish _: AVSpeechUtterance) {
+        announceLog.log("delegate didFinish")
         Task { @MainActor [weak self] in
             self?.handleSpeechFinishedOrCancelled()
         }
