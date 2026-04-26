@@ -27,6 +27,16 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         self.settings = settings
         super.init()
 
+        announcer.configureAudioSession()
+        settings.onAnnouncementsChanged = { [weak self] enabled in
+            Task { @MainActor [weak self] in
+                if enabled {
+                    self?.announcer.refresh()
+                } else {
+                    self?.announcer.stop()
+                }
+            }
+        }
         applySettingsToGame(resetOnChange: false)
         observeSettings()
         flicInput.restoreIfEnabled()
@@ -58,11 +68,10 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             return "Game - \(settings.displayName(for: gameWinner))"
         }
 
-        let base = "First to \(settings.pointsToWin.rawValue), win by 2"
-        guard settings.matchLength != .single else {
-            return base
-        }
-        return "\(base) · Games \(game.playerOneGames)–\(game.playerTwoGames)"
+        let rules = settings.scoringRules
+        let base = "First to \(rules.pointsToWin), win by \(rules.winningMargin)"
+        let serverText = "Serve: \(settings.displayName(for: game.currentServer))"
+        return "\(base) · Games \(game.playerOneGames)-\(game.playerTwoGames) · \(serverText)"
     }
 
     func addPoint(to player: Player) {
@@ -100,7 +109,7 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             accepted = game.history.count < previousHistoryCount
 
             if accepted {
-                announceCurrentScore()
+                announceUndo()
             }
 
         case .reset:
@@ -117,23 +126,21 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     }
 
     private func observeSettings() {
-        settings.$pointsToWin
-            .dropFirst()
-            .sink { [weak self] _ in self?.applySettingsToGame(resetOnChange: true) }
-            .store(in: &cancellables)
-
-        settings.$matchLength
-            .dropFirst()
-            .sink { [weak self] _ in self?.applySettingsToGame(resetOnChange: true) }
-            .store(in: &cancellables)
+        Publishers.MergeMany(
+            settings.$scoringMode.dropFirst().map { _ in }.eraseToAnyPublisher(),
+            settings.$matchLength.dropFirst().map { _ in }.eraseToAnyPublisher()
+        )
+        // `@Published` fires during `willSet`; hop to the next runloop so
+        // scoringRules reflects the post-mutation values before reconfiguring.
+        .receive(on: DispatchQueue.main)
+        .sink { [weak self] _ in self?.applySettingsToGame(resetOnChange: true) }
+        .store(in: &cancellables)
 
         Publishers.MergeMany(
             settings.$playerOneName.dropFirst().map { _ in }.eraseToAnyPublisher(),
             settings.$playerTwoName.dropFirst().map { _ in }.eraseToAnyPublisher(),
             settings.$playerOneBatColor.dropFirst().map { _ in }.eraseToAnyPublisher(),
-            settings.$playerTwoBatColor.dropFirst().map { _ in }.eraseToAnyPublisher(),
-            settings.$watchMode.dropFirst().map { _ in }.eraseToAnyPublisher(),
-            settings.$watchSwipeEnabled.dropFirst().map { _ in }.eraseToAnyPublisher()
+            settings.$playerTwoBatColor.dropFirst().map { _ in }.eraseToAnyPublisher()
         )
         // `@Published` fires during `willSet`; hop to the next runloop so the
         // broadcast reads the post-mutation value instead of the stale one.
@@ -149,7 +156,7 @@ final class PhoneScoreStore: NSObject, ObservableObject {
 
     private func applySettingsToGame(resetOnChange: Bool) {
         game.configure(
-            winningScore: settings.pointsToWin.rawValue,
+            rules: settings.scoringRules,
             gamesToWin: settings.matchLength.gamesToWin
         )
 
@@ -189,12 +196,18 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     @discardableResult
     private func addPoint(to player: Player) -> Bool {
         let previousHistoryCount = game.history.count
+        let previousCompletedGamesCount = game.completedGames.count
+        let previousMatchWinner = game.matchWinner
         game.addPoint(for: player)
         guard game.history.count > previousHistoryCount else {
             return false
         }
 
-        announceCurrentScore()
+        announceAcceptedPoint(
+            scoringPlayer: player,
+            previousCompletedGamesCount: previousCompletedGamesCount,
+            previousMatchWinner: previousMatchWinner
+        )
         return true
     }
 
@@ -227,19 +240,24 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         }
     }
 
-    private func announceCurrentScore() {
+    private func announceAcceptedPoint(
+        scoringPlayer: Player,
+        previousCompletedGamesCount: Int,
+        previousMatchWinner: Player?
+    ) {
         guard settings.announcementsEnabled else {
             return
         }
 
-        if let matchWinner = game.matchWinner {
+        if let matchWinner = game.matchWinner, matchWinner != previousMatchWinner {
             if settings.announceWinner {
                 announcer.speak("Match, \(settings.displayName(for: matchWinner))", voiceIdentifier: settings.voiceIdentifier)
             }
             return
         }
 
-        if let gameWinner = game.gameWinner {
+        if game.completedGames.count > previousCompletedGamesCount,
+           let gameWinner = game.completedGames.last?.winner {
             if settings.announceWinner {
                 announcer.speak("Game, \(settings.displayName(for: gameWinner))", voiceIdentifier: settings.voiceIdentifier)
             }
@@ -247,10 +265,44 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         }
 
         if settings.announceScore {
-            announcer.speak(
-                "\(game.playerOneScore) \(game.playerTwoScore)",
-                voiceIdentifier: settings.voiceIdentifier
+            announcer.speakSegments(
+                scoreAnnouncementSegments(scoringPlayer: scoringPlayer),
+                voiceIdentifier: settings.voiceIdentifier,
+                pause: 0.5
             )
+        }
+    }
+
+    private func announceUndo() {
+        guard settings.announcementsEnabled, settings.announceScore else {
+            return
+        }
+
+        announcer.speak(scoreAnnouncement(scoringPlayer: nil), voiceIdentifier: settings.voiceIdentifier)
+    }
+
+    private func scoreAnnouncement(scoringPlayer: Player?) -> String {
+        scoreAnnouncementSegments(scoringPlayer: scoringPlayer).joined(separator: " ")
+    }
+
+    private func scoreAnnouncementSegments(scoringPlayer: Player?) -> [String] {
+        let server = game.currentServer
+        let receiver: Player = server == .playerOne ? .playerTwo : .playerOne
+        let serveText = "\(settings.displayName(for: server)) serves."
+        let scoreText = "\(score(for: server)) serving \(score(for: receiver))."
+
+        guard let scoringPlayer else {
+            return [serveText, scoreText]
+        }
+        return ["Point \(settings.displayName(for: scoringPlayer)).", serveText, scoreText]
+    }
+
+    private func score(for player: Player) -> Int {
+        switch player {
+        case .playerOne:
+            game.playerOneScore
+        case .playerTwo:
+            game.playerTwoScore
         }
     }
 
@@ -262,6 +314,10 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             ConnectivityKey.source: ConnectivitySource.phone,
             ConnectivityKey.phoneSequence: phoneSequence,
             ConnectivityKey.winningScore: game.winningScore,
+            ConnectivityKey.winBy: game.winBy,
+            ConnectivityKey.serveSwitchInterval: game.serveSwitchInterval,
+            ConnectivityKey.switchesServeEveryPointFromDeuce: game.switchesServeEveryPointFromDeuce,
+            ConnectivityKey.currentServer: game.currentServer.rawValue,
             ConnectivityKey.gamesToWin: game.gamesToWin,
             ConnectivityKey.playerOneScore: game.playerOneScore,
             ConnectivityKey.playerTwoScore: game.playerTwoScore,
@@ -269,8 +325,6 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             ConnectivityKey.playerTwoName: settings.displayName(for: .playerTwo),
             ConnectivityKey.playerOneColorID: settings.playerOneBatColor.rawValue,
             ConnectivityKey.playerTwoColorID: settings.playerTwoBatColor.rawValue,
-            ConnectivityKey.watchMode: settings.watchMode.rawValue,
-            ConnectivityKey.watchSwipeEnabled: settings.watchSwipeEnabled,
             ConnectivityKey.history: game.history.map(\.rawValue)
         ]
 
@@ -368,46 +422,250 @@ extension PhoneScoreStore: WCSessionDelegate {
 }
 
 @MainActor
-private final class ScoreAnnouncer {
-    private let synthesizer = AVSpeechSynthesizer()
+private final class ScoreAnnouncer: NSObject, AVSpeechSynthesizerDelegate {
+    private struct AnnouncementRequest {
+        let segments: [String]
+        let voiceIdentifier: String
+        let pause: TimeInterval
+    }
+
+    private var synthesizer = AVSpeechSynthesizer()
     private var isAudioSessionReady = false
+    private var wasSpeakingBeforeInterruption = false
+    private var interruptionCancellable: AnyCancellable?
+
+    /// Single-slot "latest state wins" pending request. Any new request
+    /// overwrites the previous one so stale intermediate announcements are
+    /// discarded during rapid input bursts.
+    private var pendingRequest: AnnouncementRequest?
+    private var isCancelling = false
+    private var debounceTask: Task<Void, Never>?
+    private var watchdogTask: Task<Void, Never>?
+
+    private static let debounceDelay: UInt64 = 300_000_000 // 300ms
+    private static let cancelWatchdogDelay: UInt64 = 600_000_000 // 600ms
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+        interruptionCancellable = NotificationCenter.default
+            .publisher(
+                for: AVAudioSession.interruptionNotification,
+                object: AVAudioSession.sharedInstance()
+            )
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] notification in
+                Task { @MainActor in
+                    self?.handleInterruption(notification)
+                }
+            }
+    }
 
     func speak(_ text: String, voiceIdentifier: String = "") {
-        prepareAudioSessionIfNeeded()
+        enqueue(segments: [text], voiceIdentifier: voiceIdentifier, pause: 0)
+    }
+
+    func speakSegments(_ segments: [String], voiceIdentifier: String = "", pause: TimeInterval) {
+        enqueue(segments: segments, voiceIdentifier: voiceIdentifier, pause: pause)
+    }
+
+    private func enqueue(segments: [String], voiceIdentifier: String, pause: TimeInterval) {
+        let cleaned = segments
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard !cleaned.isEmpty else { return }
+
+        configureAudioSession()
+
+        // Latest-state-wins: overwrite any previously pending request and
+        // schedule a debounced flush so a burst of rapid score events
+        // collapses to a single announcement of the final state.
+        pendingRequest = AnnouncementRequest(
+            segments: cleaned,
+            voiceIdentifier: voiceIdentifier,
+            pause: pause
+        )
+
+        debounceTask?.cancel()
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.debounceDelay)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.dispatchPending()
+            }
+        }
+    }
+
+    private func dispatchPending() {
+        guard pendingRequest != nil else { return }
 
         if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
+            // Don't speak in the same runloop tick as stopSpeaking — that
+            // races and can leave the synthesizer permanently silent.
+            // Defer until didCancel fires (or watchdog times out).
+            requestCancel()
+        } else {
+            flush()
+        }
+    }
+
+    private func requestCancel() {
+        guard !isCancelling else { return }
+        isCancelling = true
+        synthesizer.stopSpeaking(at: .immediate)
+
+        // Watchdog: AVSpeechSynthesizer occasionally fails to deliver
+        // didCancel after stopSpeaking, which would otherwise wedge the
+        // announcer permanently. If that happens we flush ourselves.
+        watchdogTask?.cancel()
+        watchdogTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.cancelWatchdogDelay)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                if self.isCancelling {
+                    self.isCancelling = false
+                    self.flush()
+                }
+            }
+        }
+    }
+
+    private func flush() {
+        watchdogTask?.cancel()
+        watchdogTask = nil
+        isCancelling = false
+
+        guard let request = pendingRequest else { return }
+        pendingRequest = nil
+
+        let utterances = request.segments.enumerated().map { index, segment -> AVSpeechUtterance in
+            let utterance = AVSpeechUtterance(string: segment)
+            utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+            utterance.pitchMultiplier = 1.0
+            utterance.volume = 1.0
+            utterance.postUtteranceDelay = index == request.segments.count - 1 ? 0 : request.pause
+            utterance.voice = Self.preferredVoice(fallbackIdentifier: request.voiceIdentifier)
+            return utterance
         }
 
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        utterance.pitchMultiplier = 1.0
-        utterance.volume = 1.0
-        if !voiceIdentifier.isEmpty,
-           let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
-            utterance.voice = voice
-        } else {
-            utterance.voice = AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
+        for utterance in utterances {
+            synthesizer.speak(utterance)
         }
-        synthesizer.speak(utterance)
     }
 
     func stop() {
+        debounceTask?.cancel()
+        debounceTask = nil
+        watchdogTask?.cancel()
+        watchdogTask = nil
+        pendingRequest = nil
+        isCancelling = false
         synthesizer.stopSpeaking(at: .immediate)
     }
 
-    private func prepareAudioSessionIfNeeded() {
+    func refresh() {
+        // Hard reset: rebuild the synthesizer to recover from any wedged
+        // internal state (e.g. when toggling Announcements OFF/ON after a
+        // rapid-input lockup).
+        debounceTask?.cancel()
+        debounceTask = nil
+        watchdogTask?.cancel()
+        watchdogTask = nil
+        pendingRequest = nil
+        isCancelling = false
+        synthesizer.stopSpeaking(at: .immediate)
+        synthesizer.delegate = nil
+        synthesizer = AVSpeechSynthesizer()
+        synthesizer.delegate = self
+        isAudioSessionReady = false
+        configureAudioSession()
+    }
+
+    func configureAudioSession() {
         guard !isAudioSessionReady else {
             return
         }
 
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.mixWithOthers])
             try audioSession.setActive(true)
             isAudioSessionReady = true
         } catch {
             isAudioSessionReady = false
+        }
+    }
+
+    private func handleSpeechFinishedOrCancelled() {
+        watchdogTask?.cancel()
+        watchdogTask = nil
+        isCancelling = false
+
+        // Only flush if there is a fresh pending request waiting and the
+        // synthesizer is fully idle. Mid-utterance didFinish callbacks for
+        // multi-segment announcements are no-ops here.
+        if pendingRequest != nil, !synthesizer.isSpeaking {
+            flush()
+        }
+    }
+
+    nonisolated func speechSynthesizer(_: AVSpeechSynthesizer, didCancel _: AVSpeechUtterance) {
+        Task { @MainActor [weak self] in
+            self?.handleSpeechFinishedOrCancelled()
+        }
+    }
+
+    nonisolated func speechSynthesizer(_: AVSpeechSynthesizer, didFinish _: AVSpeechUtterance) {
+        Task { @MainActor [weak self] in
+            self?.handleSpeechFinishedOrCancelled()
+        }
+    }
+
+    private static func preferredVoice(fallbackIdentifier: String) -> AVSpeechSynthesisVoice? {
+        if let samantha = samanthaVoice() {
+            return samantha
+        }
+
+        if !fallbackIdentifier.isEmpty,
+           let voice = AVSpeechSynthesisVoice(identifier: fallbackIdentifier) {
+            return voice
+        }
+
+        return AVSpeechSynthesisVoice(language: "en-US")
+            ?? AVSpeechSynthesisVoice(language: AVSpeechSynthesisVoice.currentLanguageCode())
+    }
+
+    private static func samanthaVoice() -> AVSpeechSynthesisVoice? {
+        AVSpeechSynthesisVoice.speechVoices()
+            .first { $0.name == "Samantha" && $0.language.hasPrefix("en") }
+    }
+
+    private func handleInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+
+        switch type {
+        case .began:
+            wasSpeakingBeforeInterruption = synthesizer.isSpeaking
+            isAudioSessionReady = false
+
+        case .ended:
+            configureAudioSession()
+
+            let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
+            if wasSpeakingBeforeInterruption || options.contains(.shouldResume), synthesizer.isPaused {
+                synthesizer.continueSpeaking()
+            }
+            wasSpeakingBeforeInterruption = false
+
+        @unknown default:
+            break
         }
     }
 }
@@ -420,6 +678,10 @@ private enum ConnectivityKey {
     static let action = "action"
     static let player = "player"
     static let winningScore = "winningScore"
+    static let winBy = "winBy"
+    static let serveSwitchInterval = "serveSwitchInterval"
+    static let switchesServeEveryPointFromDeuce = "switchesServeEveryPointFromDeuce"
+    static let currentServer = "currentServer"
     static let gamesToWin = "gamesToWin"
     static let playerOneScore = "playerOneScore"
     static let playerTwoScore = "playerTwoScore"
@@ -427,8 +689,6 @@ private enum ConnectivityKey {
     static let playerTwoName = "playerTwoName"
     static let playerOneColorID = "playerOneColorID"
     static let playerTwoColorID = "playerTwoColorID"
-    static let watchMode = "watchMode"
-    static let watchSwipeEnabled = "watchSwipeEnabled"
     static let history = "history"
 }
 

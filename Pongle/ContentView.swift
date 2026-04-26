@@ -57,8 +57,7 @@ struct ContentView: View {
 
                     MatchControlsDock(
                         isWatchConnected: store.isWatchReachable,
-                        flicInput: store.flicInput,
-                        onRulesChanged: { store.reset() }
+                        flicInput: store.flicInput
                     )
                 }
                 .padding(.horizontal, 20)
@@ -82,38 +81,16 @@ struct ContentView: View {
     }
 
     private var topBar: some View {
+        // Title intentionally hidden; preserve original bar height so the
+        // surrounding VStack spacing rhythm stays the same.
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Pongle")
-                    .font(.system(.title2, design: .rounded, weight: .bold))
-                    .foregroundStyle(.white)
-                Text(store.statusText)
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.62))
-            }
-
             Spacer()
-
-            ConnectionPill(isConnected: store.isWatchReachable)
         }
+        .frame(height: 28)
     }
 
     private var bottomActionRail: some View {
         HStack(spacing: 12) {
-            ScoreActionButton(
-                title: "Undo",
-                systemImage: "arrow.uturn.backward",
-                isEnabled: store.game.canUndo,
-                action: store.undo
-            )
-
-            ScoreActionButton(
-                title: store.isAudioEnabled ? "Mute" : "Audio",
-                systemImage: store.isAudioEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill",
-                isEnabled: true,
-                action: store.toggleAudio
-            )
-
             ScoreActionButton(
                 title: "Reset",
                 systemImage: "restart",
@@ -140,6 +117,7 @@ struct ContentView: View {
                         playerOneAccent: store.settings.batColor(for: .playerOne).accentColor,
                         playerTwoAccent: store.settings.batColor(for: .playerTwo).accentColor,
                         winner: store.game.winner,
+                        currentServer: store.game.currentServer,
                         usesHorizontalLayout: isWide,
                         isCompact: true,
                         compactHeight: compactHeight,
@@ -152,12 +130,14 @@ struct ContentView: View {
                         topPlayerName: heroDisplayName(for: .playerTwo),
                         topPlayerScore: store.game.playerTwoScore,
                         topPlayerAccent: store.settings.batColor(for: .playerTwo).accentColor,
-                        topPlayerBatImageName: store.settings.batColor(for: .playerTwo).imageName,
+                        topPlayerIsServing: store.game.currentServer == .playerTwo,
                         bottomPlayerName: heroDisplayName(for: .playerOne),
                         bottomPlayerScore: store.game.playerOneScore,
                         bottomPlayerAccent: store.settings.batColor(for: .playerOne).accentColor,
-                        bottomPlayerBatImageName: store.settings.batColor(for: .playerOne).imageName,
+                        bottomPlayerIsServing: store.game.currentServer == .playerOne,
                         winner: store.game.winner,
+                        completedGames: store.game.completedGames,
+                        gamesToWin: store.game.gamesToWin,
                         isIphoneTapInputEnabled: store.settings.iphoneTapInputEnabled,
                         onAddPoint: store.addPoint
                     )
@@ -246,12 +226,14 @@ private struct HeroScoreboardScene: View {
     let topPlayerName: String
     let topPlayerScore: Int
     let topPlayerAccent: Color
-    let topPlayerBatImageName: String
+    let topPlayerIsServing: Bool
     let bottomPlayerName: String
     let bottomPlayerScore: Int
     let bottomPlayerAccent: Color
-    let bottomPlayerBatImageName: String
+    let bottomPlayerIsServing: Bool
     let winner: Player?
+    let completedGames: [CompletedGame]
+    let gamesToWin: Int
     let isIphoneTapInputEnabled: Bool
     let onAddPoint: (Player) -> Void
 
@@ -259,29 +241,24 @@ private struct HeroScoreboardScene: View {
         let tableAspectRatio = 577.0 / 433.0
         let labelFontSize = min(max(availableSize.width * 0.04, 19), 27)
         let scoreFont = min(max(availableSize.width * 0.158, 102), 148)
-        let badgeSide = min(max(scoreFont * 0.98, 96), 136)
         let scoreColumnWidth = min(max(availableSize.width * 0.19, 114), 156)
-        let clusterWidth = min(max(badgeSide + scoreColumnWidth + 44, 296), 472)
+        let clusterWidth = min(max(scoreColumnWidth + 112, 232), 344)
         let railWidth = min(max(availableSize.width * 0.8, 272), 700)
         let tableFootprintWidth = min(max(availableSize.width * 0.9, 356), 640)
-        let baseTableVisualWidth = min(max(tableFootprintWidth + 92, availableSize.width * 1.17), 800)
-        let currentTableVisualWidth = min(baseTableVisualWidth * 1.25, 1120)
-        let tableVisualWidth = min(currentTableVisualWidth * 1.368, 1512)
+        let tableVisualWidth = min(max(tableFootprintWidth + 92, availableSize.width * 1.17), 800)
         let tableImageHeight = tableVisualWidth / tableAspectRatio
-        let currentTableImageHeight = currentTableVisualWidth / tableAspectRatio
         // Table PNG has ~10% transparent padding at the top and ~17% at the bottom. Lift
         // the image so the visible top sits just below the opponent rail while the lower
         // rail only clips the feet. Both rails are drawn above the table.
-        let tableBeamGap = min(max(availableSize.height * 0.014, 16), 22)
-        let tableFootOverlap = min(max(tableImageHeight * 0.11, 56), 104)
+        let tableBeamGap = 3.0
+        let tableFootOverlap = min(max(tableImageHeight * 0.04, 18), 34)
         let tableTopLift = max(tableImageHeight * 0.10 - tableBeamGap, 0)
-        // Make the table larger while shifting only the table down slightly; the beams
-        // and player panels stay anchored because only the image offset changes here.
-        let tableDrop = currentTableImageHeight * 0.07
-        let tableContainerHeight = max(tableImageHeight * 0.73 - tableFootOverlap, 0)
+        let tableDrop = 3.0
+        let originalGap = min(max(availableSize.height * 0.014, 16), 22) + min(max(tableImageHeight * 0.035, 8), 16)
+        let tableContainerHeight = max(tableImageHeight * 0.852 - tableFootOverlap - (originalGap - (tableBeamGap + tableDrop)), 0)
         let horizontalPadding = min(max(availableSize.width * 0.006, 0), 6)
         let playerSpacing = min(max(availableSize.height * 0.004, 2), 6)
-        let bottomRailLift = min(max(availableSize.height * 0.03, 18), 28)
+        let bottomRailLift = 0.0
         let bottomClusterPullUp = min(max(availableSize.height * 0.022, 12), 20)
 
         VStack(spacing: 0) {
@@ -289,14 +266,14 @@ private struct HeroScoreboardScene: View {
                 playerName: topPlayerName,
                 score: topPlayerScore,
                 accent: topPlayerAccent,
-                batImageName: topPlayerBatImageName,
                 isWinner: winner == .playerTwo,
-                badgeSide: badgeSide,
+                isServing: topPlayerIsServing,
                 labelFontSize: labelFontSize,
                 scoreFont: scoreFont,
                 scoreColumnWidth: scoreColumnWidth,
                 clusterWidth: clusterWidth,
-                isTapInputEnabled: isIphoneTapInputEnabled
+                isTapInputEnabled: isIphoneTapInputEnabled,
+                showsPlayerName: true
             ) {
                 onAddPoint(.playerTwo)
             }
@@ -308,15 +285,18 @@ private struct HeroScoreboardScene: View {
             Color.clear
                 .frame(height: tableContainerHeight)
                 .overlay(alignment: .top) {
-                    Image("Table")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: tableVisualWidth)
-                        .shadow(color: .black.opacity(0.42), radius: 12, x: 0, y: 6)
+                    HeroTableSurface(
+                        width: tableVisualWidth,
+                        height: tableImageHeight,
+                        completedGames: completedGames,
+                        gamesToWin: gamesToWin,
+                        topAccent: topPlayerAccent,
+                        bottomAccent: bottomPlayerAccent
+                    )
                         .frame(maxWidth: .infinity, alignment: .center)
                         .offset(y: tableDrop - tableTopLift)
                 }
-                .zIndex(1)
+                .zIndex(0)
 
             HeroAccentRail(accent: bottomPlayerAccent, emphasis: winner == .playerOne, width: railWidth)
                 .padding(.top, -bottomRailLift)
@@ -327,14 +307,14 @@ private struct HeroScoreboardScene: View {
                 playerName: bottomPlayerName,
                 score: bottomPlayerScore,
                 accent: bottomPlayerAccent,
-                batImageName: bottomPlayerBatImageName,
                 isWinner: winner == .playerOne,
-                badgeSide: badgeSide,
+                isServing: bottomPlayerIsServing,
                 labelFontSize: labelFontSize,
                 scoreFont: scoreFont,
                 scoreColumnWidth: scoreColumnWidth,
                 clusterWidth: clusterWidth,
-                isTapInputEnabled: isIphoneTapInputEnabled
+                isTapInputEnabled: isIphoneTapInputEnabled,
+                showsPlayerName: true
             ) {
                 onAddPoint(.playerOne)
             }
@@ -345,18 +325,229 @@ private struct HeroScoreboardScene: View {
     }
 }
 
+private struct HeroTableSurface: View {
+    let width: CGFloat
+    let height: CGFloat
+    let completedGames: [CompletedGame]
+    let gamesToWin: Int
+    let topAccent: Color
+    let bottomAccent: Color
+
+    private enum TableSide { case top, bottom }
+
+    private enum SlotState {
+        case unplayed
+        case played(CompletedGame, isMatchClincher: Bool)
+        case unneeded
+    }
+
+    private var totalSlots: Int {
+        max(gamesToWin * 2 - 1, 1)
+    }
+
+    private var matchWinner: Player? {
+        let p1 = completedGames.filter { $0.winner == .playerOne }.count
+        let p2 = completedGames.filter { $0.winner == .playerTwo }.count
+        if p1 >= gamesToWin { return .playerOne }
+        if p2 >= gamesToWin { return .playerTwo }
+        return nil
+    }
+
+    private func state(forGameNumber n: Int) -> SlotState {
+        if let game = completedGames.first(where: { $0.gameNumber == n }) {
+            let clincher = matchWinner != nil && completedGames.last?.gameNumber == n
+            return .played(game, isMatchClincher: clincher)
+        }
+        return matchWinner == nil ? .unplayed : .unneeded
+    }
+
+    var body: some View {
+        ZStack {
+            Image("Table")
+                .resizable()
+                .scaledToFit()
+                .frame(width: width)
+                .shadow(color: .black.opacity(0.42), radius: 12, x: 0, y: 6)
+
+            ForEach(1...totalSlots, id: \.self) { slot in
+                let slotState = state(forGameNumber: slot)
+                tile(forGameNumber: slot, state: slotState, side: .top)
+                    .position(position(forGameNumber: slot, side: .top))
+                tile(forGameNumber: slot, state: slotState, side: .bottom)
+                    .position(position(forGameNumber: slot, side: .bottom))
+            }
+        }
+        .frame(width: width, height: height)
+    }
+
+    @ViewBuilder
+    private func tile(forGameNumber n: Int, state: SlotState, side: TableSide) -> some View {
+        let titleSize = min(max(width * 0.019, 11), 14)
+        let scoreSize = min(max(width * 0.027, 15), 19)
+        let underlineWidth = min(max(width * 0.062, 36), 52)
+        let iconSize = min(max(width * 0.020, 11), 15)
+        let crownSize = min(max(width * 0.030, 16), 22)
+        let sideAccent: Color = side == .top ? topAccent : bottomAccent
+
+        switch state {
+        case .unplayed:
+            unplayedTile(gameNumber: n, titleSize: titleSize, underlineWidth: underlineWidth)
+        case .played(let game, let isClincher):
+            let winnerSide: TableSide = game.winner == .playerOne ? .bottom : .top
+            if side == winnerSide {
+                wonTile(
+                    game: game,
+                    titleSize: titleSize,
+                    scoreSize: scoreSize,
+                    underlineWidth: underlineWidth,
+                    crownSize: crownSize,
+                    accent: sideAccent,
+                    isClincher: isClincher
+                )
+            } else {
+                lostTile(
+                    gameNumber: n,
+                    titleSize: titleSize,
+                    iconSize: iconSize,
+                    accent: sideAccent
+                )
+            }
+        case .unneeded:
+            unneededTile(gameNumber: n, titleSize: titleSize)
+        }
+    }
+
+    private func unplayedTile(
+        gameNumber n: Int,
+        titleSize: CGFloat,
+        underlineWidth: CGFloat
+    ) -> some View {
+        VStack(spacing: 3) {
+            Text("G\(n)")
+                .font(.system(size: titleSize, weight: .bold, design: .rounded))
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: 0.5))
+                p.addLine(to: CGPoint(x: underlineWidth, y: 0.5))
+            }
+            .stroke(
+                Color.white.opacity(0.40),
+                style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [2.5, 2])
+            )
+            .frame(width: underlineWidth, height: 1)
+        }
+        .foregroundStyle(Color.white.opacity(0.42))
+        .multilineTextAlignment(.center)
+        .lineLimit(1)
+        .shadow(color: .black.opacity(0.55), radius: 2, x: 0, y: 1)
+    }
+
+    private func wonTile(
+        game: CompletedGame,
+        titleSize: CGFloat,
+        scoreSize: CGFloat,
+        underlineWidth: CGFloat,
+        crownSize: CGFloat,
+        accent: Color,
+        isClincher: Bool
+    ) -> some View {
+        VStack(spacing: 3) {
+            Text("G\(game.gameNumber)")
+                .font(.system(size: titleSize, weight: .bold, design: .rounded))
+
+            Text("\(game.player1Score) — \(game.player2Score)")
+                .font(.system(size: scoreSize, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+
+            Rectangle()
+                .fill(accent)
+                .frame(width: underlineWidth, height: 1.5)
+                .shadow(color: accent.opacity(0.6), radius: 3, x: 0, y: 0)
+        }
+        .foregroundStyle(accent)
+        .multilineTextAlignment(.center)
+        .lineLimit(1)
+        .minimumScaleFactor(0.78)
+        .shadow(color: .black.opacity(0.62), radius: 2, x: 0, y: 1)
+        .shadow(
+            color: accent.opacity(isClincher ? 0.62 : 0.42),
+            radius: isClincher ? 8 : 5,
+            x: 0,
+            y: 0
+        )
+        .shadow(
+            color: accent.opacity(isClincher ? 0.34 : 0.22),
+            radius: isClincher ? 16 : 11,
+            x: 0,
+            y: 0
+        )
+        .overlay(alignment: .top) {
+            if isClincher {
+                Image(systemName: "crown.fill")
+                    .font(.system(size: crownSize, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .shadow(color: .black.opacity(0.5), radius: 1, x: 0, y: 1)
+                    .shadow(color: accent.opacity(0.55), radius: 6, x: 0, y: 0)
+                    .offset(y: -(crownSize + 4))
+            }
+        }
+    }
+
+    private func lostTile(
+        gameNumber n: Int,
+        titleSize: CGFloat,
+        iconSize: CGFloat,
+        accent: Color
+    ) -> some View {
+        VStack(spacing: 4) {
+            Text("G\(n)")
+                .font(.system(size: titleSize, weight: .bold, design: .rounded))
+            Image(systemName: "xmark")
+                .font(.system(size: iconSize, weight: .bold))
+        }
+        .foregroundStyle(accent.opacity(0.55))
+        .multilineTextAlignment(.center)
+        .lineLimit(1)
+        .shadow(color: .black.opacity(0.55), radius: 2, x: 0, y: 1)
+        .shadow(color: accent.opacity(0.18), radius: 6, x: 0, y: 0)
+    }
+
+    private func unneededTile(gameNumber n: Int, titleSize: CGFloat) -> some View {
+        Text("G\(n)")
+            .font(.system(size: titleSize, weight: .bold, design: .rounded))
+            .foregroundStyle(Color.white.opacity(0.22))
+            .lineLimit(1)
+            .shadow(color: .black.opacity(0.5), radius: 2, x: 0, y: 1)
+    }
+
+    private func position(forGameNumber n: Int, side: TableSide) -> CGPoint {
+        let slot = CGFloat(min(max(n - 1, 0), 2))
+        switch side {
+        case .top:
+            return CGPoint(
+                x: width * (0.36 + slot * 0.14),
+                y: height * 0.19
+            )
+        case .bottom:
+            return CGPoint(
+                x: width * (0.29 + slot * 0.21),
+                y: height * 0.68
+            )
+        }
+    }
+}
+
 private struct HeroPlayerCluster: View {
     let playerName: String
     let score: Int
     let accent: Color
-    let batImageName: String
     let isWinner: Bool
-    let badgeSide: CGFloat
+    let isServing: Bool
     let labelFontSize: CGFloat
     let scoreFont: CGFloat
     let scoreColumnWidth: CGFloat
     let clusterWidth: CGFloat
     let isTapInputEnabled: Bool
+    let showsPlayerName: Bool
     let action: () -> Void
 
     @ViewBuilder
@@ -374,51 +565,53 @@ private struct HeroPlayerCluster: View {
     }
 
     private var clusterBody: some View {
-        HStack(alignment: .center, spacing: max(14, badgeSide * 0.11)) {
-            PlayerBatBadge(imageName: batImageName, accent: accent)
-                .frame(width: badgeSide, height: badgeSide)
+        let nameSize = labelFontSize
+        let serveBadgeHeight = max(nameSize * 1.05, 22)
 
-            VStack(alignment: .leading, spacing: 2) {
+        return VStack(alignment: .center, spacing: 4) {
+            if showsPlayerName {
                 Text(playerName)
-                    .font(.system(size: labelFontSize, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(isWinner ? 0.82 : 0.68))
+                    .font(.system(size: nameSize, weight: .semibold, design: .rounded))
+                    .foregroundStyle(accent)
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
-
-                HeroScoreText(score: score, accent: accent, fontSize: scoreFont, isWinner: isWinner)
-                    .frame(width: scoreColumnWidth, alignment: .leading)
+                    .shadow(color: accent.opacity(0.55), radius: 8, x: 0, y: 0)
+                    .shadow(color: accent.opacity(0.30), radius: 18, x: 0, y: 0)
             }
 
+            HeroScoreText(score: score, accent: accent, fontSize: scoreFont, isWinner: isWinner)
+                .frame(width: scoreColumnWidth, alignment: .center)
+
+            ServeBadge(accent: accent, isCompact: false)
+                .opacity(isServing ? 1 : 0)
+                .frame(height: serveBadgeHeight)
+                .accessibilityHidden(!isServing)
         }
-        .frame(maxWidth: clusterWidth, minHeight: badgeSide, alignment: .leading)
+        .frame(maxWidth: clusterWidth, minHeight: max(scoreFont * 0.96, 108), alignment: .center)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 1)
-        .accessibilityLabel("\(playerName), score \(min(score, 99))")
+        .accessibilityLabel("\(playerName), score \(min(score, 99))\(isServing ? ", serving" : "")")
     }
 }
 
-private struct PlayerBatBadge: View {
-    let imageName: String
+private struct ServeBadge: View {
     let accent: Color
+    let isCompact: Bool
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .fill(Color.white.opacity(0.035))
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(borderColor, lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.24), radius: 10, x: 0, y: 6)
-            .overlay {
-                Image(imageName)
-                    .resizable()
-                    .scaledToFit()
-                    .padding(9)
-            }
-    }
-
-    private var borderColor: Color {
-        Color.white.opacity(0.14)
+        Label("Serve", systemImage: "circle.fill")
+            .font(.system(size: isCompact ? 9 : 11, weight: .semibold, design: .rounded))
+            .labelStyle(.titleAndIcon)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .foregroundStyle(accent.opacity(0.94))
+            .padding(.horizontal, isCompact ? 9 : 12)
+            .padding(.vertical, isCompact ? 4 : 5)
+            .background(
+                Capsule()
+                    .stroke(accent.opacity(0.55), lineWidth: 1)
+            )
+            .shadow(color: accent.opacity(0.28), radius: 5, x: 0, y: 0)
     }
 }
 
@@ -434,15 +627,10 @@ private struct HeroScoreText: View {
             .lineLimit(1)
             .minimumScaleFactor(0.6)
             .tracking(score >= 10 ? -3 : -1)
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [.white, Color.white.opacity(0.82)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .shadow(color: .black.opacity(0.22), radius: 1, x: 0, y: 1)
-            .shadow(color: accent.opacity(isWinner ? 0.1 : 0.04), radius: isWinner ? 6 : 3, x: 0, y: 0)
+            .foregroundStyle(accent)
+            .shadow(color: .black.opacity(0.30), radius: 2, x: 0, y: 1)
+            .shadow(color: accent.opacity(isWinner ? 0.75 : 0.62), radius: isWinner ? 18 : 14, x: 0, y: 0)
+            .shadow(color: accent.opacity(isWinner ? 0.45 : 0.32), radius: isWinner ? 36 : 28, x: 0, y: 0)
     }
 }
 
@@ -521,6 +709,7 @@ private struct ScoreboardPanels: View {
     let playerOneAccent: Color
     let playerTwoAccent: Color
     let winner: Player?
+    let currentServer: Player
     let usesHorizontalLayout: Bool
     let isCompact: Bool
     let compactHeight: CGFloat
@@ -554,6 +743,7 @@ private struct ScoreboardPanels: View {
                 score: playerOneScore,
                 accent: playerOneAccent,
                 isWinner: winner == .playerOne,
+                isServing: currentServer == .playerOne,
                 isCompact: isCompact
             )
 
@@ -563,6 +753,7 @@ private struct ScoreboardPanels: View {
                 score: playerTwoScore,
                 accent: playerTwoAccent,
                 isWinner: winner == .playerTwo,
+                isServing: currentServer == .playerTwo,
                 isCompact: isCompact
             )
         }
@@ -576,6 +767,7 @@ private struct ScoreboardPanels: View {
         score: Int,
         accent: Color,
         isWinner: Bool,
+        isServing: Bool,
         isCompact: Bool
     ) -> some View {
         let panel = PlayerScorePanel(
@@ -583,6 +775,7 @@ private struct ScoreboardPanels: View {
             score: score,
             accent: accent,
             isWinner: isWinner,
+            isServing: isServing,
             isCompact: isCompact,
             isTapInputEnabled: isIphoneTapInputEnabled
         )
@@ -607,6 +800,7 @@ private struct PlayerScorePanel: View {
     let score: Int
     let accent: Color
     let isWinner: Bool
+    let isServing: Bool
     let isCompact: Bool
     let isTapInputEnabled: Bool
 
@@ -622,6 +816,10 @@ private struct PlayerScorePanel: View {
                     .foregroundStyle(.white.opacity(0.72))
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
+
+                if isServing {
+                    ServeBadge(accent: accent, isCompact: isCompact)
+                }
 
                 Spacer()
 
@@ -972,30 +1170,6 @@ private struct HingeLine: View {
                     .frame(width: 5, height: 5)
             }
             .padding(.horizontal, 8)
-        }
-    }
-}
-
-private struct ConnectionPill: View {
-    let isConnected: Bool
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: isConnected ? "applewatch.radiowaves.left.and.right" : "applewatch")
-                .font(.system(size: 13, weight: .semibold))
-            Text(isConnected ? "Watch Connected" : "Watch Idle")
-                .font(.system(.footnote, design: .rounded, weight: .semibold))
-        }
-        .foregroundStyle(isConnected ? Color.pongleAccent : Color.white.opacity(0.66))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(
-            Capsule()
-                .fill(Color.white.opacity(0.08))
-        )
-        .overlay {
-            Capsule()
-                .stroke(isConnected ? Color.pongleAccent.opacity(0.55) : Color.white.opacity(0.12), lineWidth: 1)
         }
     }
 }

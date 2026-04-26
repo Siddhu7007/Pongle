@@ -1,6 +1,6 @@
 import Foundation
 
-enum Player: Int, CaseIterable, Identifiable {
+enum Player: Int, CaseIterable, Codable, Identifiable {
     case playerOne = 1
     case playerTwo = 2
 
@@ -28,10 +28,74 @@ enum ScoreEvent: Equatable {
     case reset
 }
 
+struct CompletedGame: Codable, Equatable, Identifiable {
+    var id: Int { gameNumber }
+
+    let gameNumber: Int
+    let player1Score: Int
+    let player2Score: Int
+    let winner: Player
+}
+
+enum ScoringMode: String, Codable, CaseIterable, Hashable, Identifiable {
+    case eleven
+
+    var id: String { rawValue }
+
+    var shortLabel: String {
+        switch self {
+        case .eleven:
+            "11 points"
+        }
+    }
+
+    var rules: ScoringRules {
+        switch self {
+        case .eleven:
+            .eleven
+        }
+    }
+}
+
+struct ScoringRules: Codable, Equatable {
+    static let pointsToWinRange = 2...99
+    static let winningMarginRange = 1...20
+    static let serveSwitchIntervalRange = 1...20
+
+    static let eleven = ScoringRules(pointsToWin: 11)
+
+    var pointsToWin: Int
+    var winningMargin: Int
+    var serveSwitchInterval: Int
+    var switchesServeEveryPointFromDeuce: Bool
+
+    init(
+        pointsToWin: Int,
+        winningMargin: Int = 2,
+        serveSwitchInterval: Int = 2,
+        switchesServeEveryPointFromDeuce: Bool = true
+    ) {
+        self.pointsToWin = Self.clamp(pointsToWin, to: Self.pointsToWinRange)
+        self.winningMargin = Self.clamp(winningMargin, to: Self.winningMarginRange)
+        self.serveSwitchInterval = Self.clamp(serveSwitchInterval, to: Self.serveSwitchIntervalRange)
+        self.switchesServeEveryPointFromDeuce = switchesServeEveryPointFromDeuce
+    }
+
+    var deuceThreshold: Int {
+        max(pointsToWin - 1, 1)
+    }
+
+    private static func clamp(_ value: Int, to range: ClosedRange<Int>) -> Int {
+        min(max(value, range.lowerBound), range.upperBound)
+    }
+}
+
 struct GameState: Equatable {
-    var winningScore: Int = 11
+    var winningScore: Int = ScoringRules.eleven.pointsToWin
     var gamesToWin: Int = 2
-    let winBy = 2
+    var winBy: Int = ScoringRules.eleven.winningMargin
+    var serveSwitchInterval: Int = ScoringRules.eleven.serveSwitchInterval
+    var switchesServeEveryPointFromDeuce: Bool = ScoringRules.eleven.switchesServeEveryPointFromDeuce
 
     private(set) var history: [Player] = []
 
@@ -39,10 +103,14 @@ struct GameState: Equatable {
     var playerTwoScore: Int { tally.playerTwoPoints }
     var playerOneGames: Int { tally.playerOneGames }
     var playerTwoGames: Int { tally.playerTwoGames }
+    var completedGames: [CompletedGame] { tally.completedGames }
 
     var gameWinner: Player? { tally.currentGameWinner }
     var matchWinner: Player? { tally.matchWinner }
     var winner: Player? { matchWinner ?? gameWinner }
+    var currentServer: Player {
+        server(forPlayerOneScore: playerOneScore, playerTwoScore: playerTwoScore)
+    }
 
     var canUndo: Bool {
         !history.isEmpty
@@ -52,8 +120,11 @@ struct GameState: Equatable {
         !history.isEmpty
     }
 
-    mutating func configure(winningScore: Int, gamesToWin: Int) {
-        self.winningScore = winningScore
+    mutating func configure(rules: ScoringRules, gamesToWin: Int) {
+        self.winningScore = rules.pointsToWin
+        self.winBy = rules.winningMargin
+        self.serveSwitchInterval = rules.serveSwitchInterval
+        self.switchesServeEveryPointFromDeuce = rules.switchesServeEveryPointFromDeuce
         self.gamesToWin = gamesToWin
     }
 
@@ -81,6 +152,7 @@ struct GameState: Equatable {
         var playerTwoPoints = 0
         var playerOneGames = 0
         var playerTwoGames = 0
+        var completedGames: [CompletedGame] = []
         var currentGameWinner: Player?
         var matchWinner: Player?
     }
@@ -88,28 +160,11 @@ struct GameState: Equatable {
     private var tally: Tally {
         var t = Tally()
 
+        let requiredGamesToWin = max(gamesToWin, 1)
+
         for player in history {
             if t.matchWinner != nil {
                 break
-            }
-
-            if t.currentGameWinner != nil && gamesToWin > 1 {
-                switch t.currentGameWinner! {
-                case .playerOne: t.playerOneGames += 1
-                case .playerTwo: t.playerTwoGames += 1
-                }
-                t.playerOnePoints = 0
-                t.playerTwoPoints = 0
-                t.currentGameWinner = nil
-
-                if t.playerOneGames >= gamesToWin {
-                    t.matchWinner = .playerOne
-                    break
-                }
-                if t.playerTwoGames >= gamesToWin {
-                    t.matchWinner = .playerTwo
-                    break
-                }
             }
 
             switch player {
@@ -117,23 +172,39 @@ struct GameState: Equatable {
             case .playerTwo: t.playerTwoPoints += 1
             }
 
-            t.currentGameWinner = computeGameWinner(
+            guard let gameWinner = computeGameWinner(
                 p1: t.playerOnePoints,
                 p2: t.playerTwoPoints
-            )
-        }
+            ) else {
+                continue
+            }
 
-        if let gw = t.currentGameWinner, t.matchWinner == nil {
-            if gamesToWin <= 1 {
-                t.matchWinner = gw
-            } else {
-                let projectedOne = t.playerOneGames + (gw == .playerOne ? 1 : 0)
-                let projectedTwo = t.playerTwoGames + (gw == .playerTwo ? 1 : 0)
-                if projectedOne >= gamesToWin {
-                    t.matchWinner = .playerOne
-                } else if projectedTwo >= gamesToWin {
-                    t.matchWinner = .playerTwo
-                }
+            t.currentGameWinner = gameWinner
+            t.completedGames.append(
+                CompletedGame(
+                    gameNumber: t.completedGames.count + 1,
+                    player1Score: t.playerOnePoints,
+                    player2Score: t.playerTwoPoints,
+                    winner: gameWinner
+                )
+            )
+
+            switch gameWinner {
+            case .playerOne: t.playerOneGames += 1
+            case .playerTwo: t.playerTwoGames += 1
+            }
+
+            t.currentGameWinner = nil
+
+            if t.playerOneGames >= requiredGamesToWin {
+                t.matchWinner = .playerOne
+            } else if t.playerTwoGames >= requiredGamesToWin {
+                t.matchWinner = .playerTwo
+            }
+
+            if t.matchWinner == nil {
+                t.playerOnePoints = 0
+                t.playerTwoPoints = 0
             }
         }
 
@@ -145,5 +216,20 @@ struct GameState: Equatable {
         let diff = abs(p1 - p2)
         guard high >= winningScore, diff >= winBy else { return nil }
         return p1 > p2 ? .playerOne : .playerTwo
+    }
+
+    private func server(forPlayerOneScore p1: Int, playerTwoScore p2: Int) -> Player {
+        let totalPoints = p1 + p2
+        let interval = max(serveSwitchInterval, 1)
+        let deuceStartTotal = ScoringRules(pointsToWin: winningScore).deuceThreshold * 2
+
+        let serveSegment: Int
+        if switchesServeEveryPointFromDeuce, p1 >= winningScore - 1, p2 >= winningScore - 1 {
+            serveSegment = (deuceStartTotal / interval) + max(totalPoints - deuceStartTotal, 0)
+        } else {
+            serveSegment = totalPoints / interval
+        }
+
+        return serveSegment.isMultiple(of: 2) ? .playerOne : .playerTwo
     }
 }

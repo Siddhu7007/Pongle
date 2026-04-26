@@ -12,9 +12,6 @@ final class WatchScoreStore: NSObject, ObservableObject {
     @Published private(set) var playerTwoName = Player.playerTwo.displayName
     @Published private(set) var playerOneColorID = "teal"
     @Published private(set) var playerTwoColorID = "orange"
-    @Published private(set) var defaultWatchMode = WatchMode.inputPad
-    @Published private(set) var watchSwipeEnabled = true
-
     private var session: WCSession?
     private var pendingTapTask: Task<Void, Never>?
     private var pendingHapticTask: Task<Void, Never>?
@@ -106,12 +103,17 @@ final class WatchScoreStore: NSObject, ObservableObject {
 
     private func commitPoint(for player: Player) {
         let previousHistoryCount = game.history.count
+        let previousCompletedGamesCount = game.completedGames.count
+        let previousMatchWinner = game.matchWinner
         game.addPoint(for: player)
         guard game.history.count > previousHistoryCount else {
             return
         }
 
-        eventText = winEventText() ?? "\(displayName(for: player)) +1"
+        eventText = winEventText(
+            previousCompletedGamesCount: previousCompletedGamesCount,
+            previousMatchWinner: previousMatchWinner
+        ) ?? "\(displayName(for: player)) +1"
         watchSequence += 1
 
         sendScoreEvent(action: .point, player: player)
@@ -152,6 +154,10 @@ final class WatchScoreStore: NSObject, ObservableObject {
             ConnectivityKey.source: ConnectivitySource.watch,
             ConnectivityKey.watchSequence: watchSequence,
             ConnectivityKey.winningScore: game.winningScore,
+            ConnectivityKey.winBy: game.winBy,
+            ConnectivityKey.serveSwitchInterval: game.serveSwitchInterval,
+            ConnectivityKey.switchesServeEveryPointFromDeuce: game.switchesServeEveryPointFromDeuce,
+            ConnectivityKey.currentServer: game.currentServer.rawValue,
             ConnectivityKey.gamesToWin: game.gamesToWin,
             ConnectivityKey.playerOneScore: game.playerOneScore,
             ConnectivityKey.playerTwoScore: game.playerTwoScore,
@@ -176,7 +182,13 @@ final class WatchScoreStore: NSObject, ObservableObject {
 
         if let winningScore = payload[ConnectivityKey.winningScore] as? Int,
            let gamesToWin = payload[ConnectivityKey.gamesToWin] as? Int {
-            game.configure(winningScore: winningScore, gamesToWin: gamesToWin)
+            let rules = ScoringRules(
+                pointsToWin: winningScore,
+                winningMargin: payload[ConnectivityKey.winBy] as? Int ?? game.winBy,
+                serveSwitchInterval: payload[ConnectivityKey.serveSwitchInterval] as? Int ?? game.serveSwitchInterval,
+                switchesServeEveryPointFromDeuce: payload[ConnectivityKey.switchesServeEveryPointFromDeuce] as? Bool ?? game.switchesServeEveryPointFromDeuce
+            )
+            game.configure(rules: rules, gamesToWin: gamesToWin)
         }
 
         if let rawHistory = payload[ConnectivityKey.history] as? [Int] {
@@ -201,15 +213,6 @@ final class WatchScoreStore: NSObject, ObservableObject {
             playerTwoColorID = colorID
         }
 
-        if let rawMode = payload[ConnectivityKey.watchMode] as? String,
-           let mode = WatchMode(rawValue: rawMode) {
-            defaultWatchMode = mode
-        }
-
-        if let swipeEnabled = payload[ConnectivityKey.watchSwipeEnabled] as? Bool {
-            watchSwipeEnabled = swipeEnabled
-        }
-
         eventText = winEventText() ?? "Synced"
     }
 
@@ -223,7 +226,9 @@ final class WatchScoreStore: NSObject, ObservableObject {
 
     private func playUndoHaptic() {
         cancelPendingHaptic()
-        WKInterfaceDevice.current().play(.notification)
+        // .retry gives a longer/distinct tactile pattern for undo while
+        // staying quieter than .failure (which has a more audible tone).
+        WKInterfaceDevice.current().play(.retry)
     }
 
     private func winEventText() -> String? {
@@ -231,7 +236,19 @@ final class WatchScoreStore: NSObject, ObservableObject {
             return "Match - \(displayName(for: matchWinner))"
         }
 
-        if let gameWinner = game.gameWinner {
+        return nil
+    }
+
+    private func winEventText(
+        previousCompletedGamesCount: Int,
+        previousMatchWinner: Player?
+    ) -> String? {
+        if let matchWinner = game.matchWinner, matchWinner != previousMatchWinner {
+            return "Match - \(displayName(for: matchWinner))"
+        }
+
+        if game.completedGames.count > previousCompletedGamesCount,
+           let gameWinner = game.completedGames.last?.winner {
             return "Game - \(displayName(for: gameWinner))"
         }
 
@@ -241,11 +258,15 @@ final class WatchScoreStore: NSObject, ObservableObject {
     private func playPointHaptic(for player: Player) {
         cancelPendingHaptic()
 
+        // .click is the most subtle WKHapticType watchOS exposes — closest
+        // to a vibration-only confirmation. watchOS may still emit a faint
+        // speaker tick depending on system settings; that is intentional
+        // OS behaviour and not worth working around with private APIs.
         switch player {
         case .playerOne:
-            WKInterfaceDevice.current().play(.success)
+            WKInterfaceDevice.current().play(.click)
         case .playerTwo:
-            WKInterfaceDevice.current().play(.directionUp)
+            WKInterfaceDevice.current().play(.click)
             pendingHapticTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: Self.doublePointHapticDelay)
 
@@ -254,7 +275,7 @@ final class WatchScoreStore: NSObject, ObservableObject {
                 }
 
                 await MainActor.run {
-                    WKInterfaceDevice.current().play(.directionUp)
+                    WKInterfaceDevice.current().play(.click)
                     self?.pendingHapticTask = nil
                 }
             }
@@ -333,6 +354,10 @@ private enum ConnectivityKey {
     static let action = "action"
     static let player = "player"
     static let winningScore = "winningScore"
+    static let winBy = "winBy"
+    static let serveSwitchInterval = "serveSwitchInterval"
+    static let switchesServeEveryPointFromDeuce = "switchesServeEveryPointFromDeuce"
+    static let currentServer = "currentServer"
     static let gamesToWin = "gamesToWin"
     static let playerOneScore = "playerOneScore"
     static let playerTwoScore = "playerTwoScore"
@@ -340,8 +365,6 @@ private enum ConnectivityKey {
     static let playerTwoName = "playerTwoName"
     static let playerOneColorID = "playerOneColorID"
     static let playerTwoColorID = "playerTwoColorID"
-    static let watchMode = "watchMode"
-    static let watchSwipeEnabled = "watchSwipeEnabled"
     static let history = "history"
 }
 

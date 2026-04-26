@@ -6,9 +6,11 @@
 //
 
 import SwiftUI
+import UIKit
 
 @main
 struct PongleApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var settings = AppSettings()
     @StateObject private var scoreStore: PhoneScoreStore
 
@@ -22,6 +24,13 @@ struct PongleApp: App {
         WindowGroup {
             ContentView(store: scoreStore)
                 .environmentObject(settings)
+                .onChange(of: scenePhase, initial: true) { _, newPhase in
+                    updateIdleTimer(for: newPhase)
+                }
         }
+    }
+
+    private func updateIdleTimer(for scenePhase: ScenePhase) {
+        UIApplication.shared.isIdleTimerDisabled = scenePhase == .active
     }
 }

@@ -16,32 +16,19 @@ extension Color {
 
 // MARK: - Models
 
-enum PointsToWin: Int, CaseIterable, Identifiable {
-    case eleven = 11
-    case twentyOne = 21
-
-    var id: Int { rawValue }
-
-    var shortLabel: String { "\(rawValue) pts" }
-}
-
 enum MatchLength: Int, CaseIterable, Identifiable {
-    case single = 1
     case bestOfThree = 3
-    case bestOfFive = 5
 
     var id: Int { rawValue }
 
     var shortLabel: String {
         switch self {
-        case .single: "Single game"
         case .bestOfThree: "Best of 3"
-        case .bestOfFive: "Best of 5"
         }
     }
 
     var gamesToWin: Int {
-        (rawValue / 2) + 1
+        2
     }
 }
 
@@ -96,10 +83,8 @@ final class AppSettings: ObservableObject {
     static let playerNameLimit = 18
 
     private enum Key {
-        static let pointsToWin = "pongle.pointsToWin"
+        static let scoringMode = "pongle.scoringMode"
         static let matchLength = "pongle.matchLength"
-        static let switchSides = "pongle.switchSides"
-        static let switchSidesFinalSet = "pongle.switchSidesFinalSet"
         static let announcementsEnabled = "pongle.announcementsEnabled"
         static let announceScore = "pongle.announceScore"
         static let announceWinner = "pongle.announceWinner"
@@ -108,30 +93,27 @@ final class AppSettings: ObservableObject {
         static let playerTwoName = "pongle.playerTwoName"
         static let playerOneBatColor = "pongle.playerOneBatColor"
         static let playerTwoBatColor = "pongle.playerTwoBatColor"
-        static let watchMode = "pongle.watchMode"
-        static let watchSwipeEnabled = "pongle.watchSwipeEnabled"
         static let iphoneTapInputEnabled = "iphoneTapInputEnabled"
         static let flicInputEnabled = "pongle.flicInputEnabled"
     }
 
-    @Published var pointsToWin: PointsToWin {
-        didSet { UserDefaults.standard.set(pointsToWin.rawValue, forKey: Key.pointsToWin) }
+    @Published var scoringMode: ScoringMode {
+        didSet { UserDefaults.standard.set(scoringMode.rawValue, forKey: Key.scoringMode) }
     }
 
     @Published var matchLength: MatchLength {
         didSet { UserDefaults.standard.set(matchLength.rawValue, forKey: Key.matchLength) }
     }
 
-    @Published var switchSides: Bool {
-        didSet { UserDefaults.standard.set(switchSides, forKey: Key.switchSides) }
-    }
-
-    @Published var switchSidesInFinalSet: Bool {
-        didSet { UserDefaults.standard.set(switchSidesInFinalSet, forKey: Key.switchSidesFinalSet) }
-    }
+    var onAnnouncementsChanged: (@Sendable (Bool) -> Void)?
 
     @Published var announcementsEnabled: Bool {
-        didSet { UserDefaults.standard.set(announcementsEnabled, forKey: Key.announcementsEnabled) }
+        didSet {
+            UserDefaults.standard.set(announcementsEnabled, forKey: Key.announcementsEnabled)
+            if announcementsEnabled != oldValue {
+                onAnnouncementsChanged?(announcementsEnabled)
+            }
+        }
     }
 
     @Published var announceScore: Bool {
@@ -162,14 +144,6 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(playerTwoBatColor.rawValue, forKey: Key.playerTwoBatColor) }
     }
 
-    @Published var watchMode: WatchMode {
-        didSet { UserDefaults.standard.set(watchMode.rawValue, forKey: Key.watchMode) }
-    }
-
-    @Published var watchSwipeEnabled: Bool {
-        didSet { UserDefaults.standard.set(watchSwipeEnabled, forKey: Key.watchSwipeEnabled) }
-    }
-
     @Published var iphoneTapInputEnabled: Bool {
         didSet { UserDefaults.standard.set(iphoneTapInputEnabled, forKey: Key.iphoneTapInputEnabled) }
     }
@@ -181,34 +155,28 @@ final class AppSettings: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
 
-        let storedPoints = defaults.object(forKey: Key.pointsToWin) as? Int
-        self.pointsToWin = PointsToWin(rawValue: storedPoints ?? 11) ?? .eleven
+        self.scoringMode = .eleven
+        defaults.set(ScoringMode.eleven.rawValue, forKey: Key.scoringMode)
 
-        let storedMatch = defaults.object(forKey: Key.matchLength) as? Int
-        self.matchLength = MatchLength(rawValue: storedMatch ?? 3) ?? .bestOfThree
+        self.matchLength = .bestOfThree
+        defaults.set(MatchLength.bestOfThree.rawValue, forKey: Key.matchLength)
 
-        self.switchSides = (defaults.object(forKey: Key.switchSides) as? Bool) ?? true
-        self.switchSidesInFinalSet = (defaults.object(forKey: Key.switchSidesFinalSet) as? Bool) ?? true
         self.announcementsEnabled = (defaults.object(forKey: Key.announcementsEnabled) as? Bool) ?? true
         self.announceScore = (defaults.object(forKey: Key.announceScore) as? Bool) ?? true
         self.announceWinner = (defaults.object(forKey: Key.announceWinner) as? Bool) ?? true
-        self.voiceIdentifier = defaults.string(forKey: Key.voiceIdentifier) ?? ""
+        let preferredVoiceIdentifier = Self.samanthaVoiceIdentifier() ?? ""
+        self.voiceIdentifier = preferredVoiceIdentifier
+        defaults.set(preferredVoiceIdentifier, forKey: Key.voiceIdentifier)
         self.playerOneName = Self.limitedPlayerName(defaults.string(forKey: Key.playerOneName) ?? "")
         self.playerTwoName = Self.limitedPlayerName(defaults.string(forKey: Key.playerTwoName) ?? "")
         self.playerOneBatColor = PlayerBatColor(rawValue: defaults.string(forKey: Key.playerOneBatColor) ?? "") ?? .teal
         self.playerTwoBatColor = PlayerBatColor(rawValue: defaults.string(forKey: Key.playerTwoBatColor) ?? "") ?? .orange
-        self.watchMode = WatchMode(rawValue: defaults.string(forKey: Key.watchMode) ?? "") ?? .inputPad
-        self.watchSwipeEnabled = (defaults.object(forKey: Key.watchSwipeEnabled) as? Bool) ?? true
         self.iphoneTapInputEnabled = (defaults.object(forKey: Key.iphoneTapInputEnabled) as? Bool) ?? false
         self.flicInputEnabled = (defaults.object(forKey: Key.flicInputEnabled) as? Bool) ?? false
     }
 
-    var voiceDisplayName: String {
-        guard !voiceIdentifier.isEmpty,
-              let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) else {
-            return "System"
-        }
-        return voice.name
+    var scoringRules: ScoringRules {
+        scoringMode.rules
     }
 
     func displayName(for player: Player) -> String {
@@ -252,6 +220,12 @@ final class AppSettings: ObservableObject {
     static func limitedPlayerName(_ name: String) -> String {
         String(name.prefix(playerNameLimit))
     }
+
+    private static func samanthaVoiceIdentifier() -> String? {
+        AVSpeechSynthesisVoice.speechVoices()
+            .first { $0.name == "Samantha" && $0.language.hasPrefix("en") }?
+            .identifier
+    }
 }
 
 // MARK: - Match Controls Panel
@@ -260,52 +234,15 @@ struct MatchControlsDock: View {
     @EnvironmentObject var settings: AppSettings
     let isWatchConnected: Bool
     @ObservedObject var flicInput: FlicInputController
-    let onRulesChanged: () -> Void
-
-    @State private var isVoicePickerPresented = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             section(title: "Settings") {
-                SettingsMenuRow(
-                    title: "Mode",
-                    options: PointsToWin.allCases,
-                    selection: Binding(
-                        get: { settings.pointsToWin },
-                        set: { newValue in
-                            settings.pointsToWin = newValue
-                            onRulesChanged()
-                        }
-                    ),
-                    label: { "\($0.rawValue) points" }
-                )
+                SettingsValueRow(title: "Mode", value: ScoringMode.eleven.shortLabel)
 
                 divider
 
-                SettingsMenuRow(
-                    title: "Sets",
-                    options: MatchLength.allCases,
-                    selection: Binding(
-                        get: { settings.matchLength },
-                        set: { newValue in
-                            settings.matchLength = newValue
-                            onRulesChanged()
-                        }
-                    ),
-                    label: { $0.shortLabel }
-                )
-
-                divider
-
-                SettingsToggleRow(title: "Switch sides", isOn: $settings.switchSides)
-
-                if settings.matchLength != .single {
-                    divider
-                    SettingsToggleRow(
-                        title: "Switch sides in last set",
-                        isOn: $settings.switchSidesInFinalSet
-                    )
-                }
+                SettingsValueRow(title: "Sets", value: MatchLength.bestOfThree.shortLabel)
 
                 divider
 
@@ -315,14 +252,6 @@ struct MatchControlsDock: View {
                 )
 
                 if settings.announcementsEnabled {
-                    divider
-                    SettingsDisclosureRow(
-                        title: "Voice",
-                        value: settings.voiceDisplayName
-                    ) {
-                        isVoicePickerPresented = true
-                    }
-
                     divider
                     SettingsToggleRow(
                         title: "Speak score after point",
@@ -339,11 +268,6 @@ struct MatchControlsDock: View {
 
             section(title: "Players") {
                 PlayerCustomizationPanel()
-                    .padding(.vertical, 12)
-            }
-
-            section(title: "Watch Modes") {
-                WatchModePickerSection()
                     .padding(.vertical, 12)
             }
 
@@ -375,10 +299,6 @@ struct MatchControlsDock: View {
                     badge: "Later"
                 )
             }
-        }
-        .sheet(isPresented: $isVoicePickerPresented) {
-            VoicePickerSheet()
-                .environmentObject(settings)
         }
     }
 
@@ -572,192 +492,6 @@ private struct BatColorPickerPopover: View {
         }
         .padding(12)
         .presentationBackground(Color(white: 0.12))
-    }
-}
-
-private struct WatchModePickerSection: View {
-    @EnvironmentObject var settings: AppSettings
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(WatchMode.allCases) { mode in
-                        WatchModePreviewCard(
-                            mode: mode,
-                            isSelected: settings.watchMode == mode
-                        ) {
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                settings.watchMode = mode
-                            }
-                        }
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-            .scrollClipDisabled()
-
-            Rectangle()
-                .fill(Color.white.opacity(0.06))
-                .frame(height: 1)
-
-            SettingsToggleRow(
-                title: "Allow swiping between modes",
-                isOn: $settings.watchSwipeEnabled
-            )
-
-            Rectangle()
-                .fill(Color.white.opacity(0.06))
-                .frame(height: 1)
-
-            SettingsValueRow(title: "Default watch mode", value: settings.watchMode.title)
-        }
-    }
-}
-
-private struct WatchModePreviewCard: View {
-    let mode: WatchMode
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
-                WatchModeMiniPreview(mode: mode)
-                    .frame(height: 82)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(mode.title)
-                            .font(.system(.subheadline, design: .rounded, weight: .bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-
-                        Spacer(minLength: 4)
-
-                        if isSelected {
-                            Text("Default")
-                                .font(.system(size: 9, weight: .bold, design: .rounded))
-                                .foregroundStyle(.black)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(Color.pongleAccent))
-                        }
-                    }
-
-                    Text(mode.subtitle)
-                        .font(.system(.caption, design: .rounded, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.62))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.78)
-                        .multilineTextAlignment(.leading)
-                }
-            }
-            .padding(10)
-            .frame(width: 174, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(isSelected ? 0.09 : 0.04))
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(
-                        isSelected ? Color.pongleAccent : Color.white.opacity(0.08),
-                        lineWidth: isSelected ? 2 : 1
-                    )
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(mode.title), \(mode.subtitle)")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-    }
-}
-
-private struct WatchModeMiniPreview: View {
-    let mode: WatchMode
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.black)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.12), lineWidth: 1)
-                }
-
-            switch mode {
-            case .inputPad:
-                inputPadPreview
-            case .scoreGlance:
-                scoreGlancePreview
-            }
-        }
-    }
-
-    private var inputPadPreview: some View {
-        VStack(spacing: 5) {
-            Circle()
-                .fill(Color.green.opacity(0.2))
-                .overlay {
-                    Circle()
-                        .stroke(Color.green.opacity(0.85), lineWidth: 1.5)
-                }
-                .overlay {
-                    VStack(spacing: -1) {
-                        Text("+1")
-                            .font(.system(size: 22, weight: .black, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text("ME")
-                            .font(.system(size: 8, weight: .bold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.86))
-                    }
-                }
-                .frame(width: 52, height: 52)
-
-            Text("Tap • Tap Tap • Hold")
-                .font(.system(size: 8, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.52))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .padding(8)
-    }
-
-    private var scoreGlancePreview: some View {
-        VStack(spacing: 7) {
-            HStack(spacing: 4) {
-                scorePreviewTile(value: "04", accent: Color.teal)
-                scorePreviewTile(value: "02", accent: Color.pongleAccent)
-            }
-
-            Text("Player 1 +1")
-                .font(.system(size: 8, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.52))
-                .lineLimit(1)
-        }
-        .padding(8)
-    }
-
-    private func scorePreviewTile(value: String, accent: Color) -> some View {
-        VStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(accent)
-                .frame(height: 3)
-
-            Text(value)
-                .font(.system(size: 18, weight: .black, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .lineLimit(1)
-        }
-        .padding(6)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.white.opacity(0.08))
-        )
     }
 }
 
@@ -1016,65 +750,6 @@ private struct SettingsValueRow: View {
     }
 }
 
-private struct SettingsMenuRow<T: Hashable & Identifiable>: View {
-    let title: String
-    let options: [T]
-    @Binding var selection: T
-    let label: (T) -> String
-
-    var body: some View {
-        HStack {
-            Text(title)
-                .font(.system(.subheadline, design: .rounded, weight: .medium))
-                .foregroundStyle(.white.opacity(0.88))
-            Spacer()
-            Menu {
-                Picker("", selection: $selection) {
-                    ForEach(options) { option in
-                        Text(label(option)).tag(option)
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(label(selection))
-                        .font(.system(.subheadline, design: .rounded, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.9))
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.55))
-                }
-            }
-        }
-        .frame(minHeight: 40)
-    }
-}
-
-private struct SettingsDisclosureRow: View {
-    let title: String
-    let value: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Text(title)
-                    .font(.system(.subheadline, design: .rounded, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.88))
-                Spacer()
-                Text(value)
-                    .font(.system(.subheadline, design: .rounded, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.45))
-            }
-            .frame(minHeight: 40)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 private struct SettingsIconStatusRow: View {
     let icon: String
     let title: String
@@ -1123,71 +798,5 @@ private struct SettingsIconBadgeRow: View {
                 .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
         }
         .frame(minHeight: 46)
-    }
-}
-
-// MARK: - Voice picker
-
-struct VoicePickerSheet: View {
-    @EnvironmentObject var settings: AppSettings
-    @Environment(\.dismiss) private var dismiss
-
-    private let previewer = AVSpeechSynthesizer()
-
-    private var voices: [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
-            .filter { $0.language.hasPrefix("en") }
-            .sorted { $0.name < $1.name }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    voiceRow(identifier: "", name: "System default")
-                }
-                Section("English voices") {
-                    ForEach(voices, id: \.identifier) { voice in
-                        voiceRow(identifier: voice.identifier, name: voice.name)
-                    }
-                }
-            }
-            .navigationTitle("Voice")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
-
-    private func voiceRow(identifier: String, name: String) -> some View {
-        Button {
-            settings.voiceIdentifier = identifier
-            preview(identifier: identifier)
-        } label: {
-            HStack {
-                Text(name)
-                Spacer()
-                if identifier == settings.voiceIdentifier {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(Color.pongleAccent)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func preview(identifier: String) {
-        if previewer.isSpeaking {
-            previewer.stopSpeaking(at: .immediate)
-        }
-        let utterance = AVSpeechUtterance(string: "Two, zero")
-        if !identifier.isEmpty {
-            utterance.voice = AVSpeechSynthesisVoice(identifier: identifier)
-        }
-        previewer.speak(utterance)
     }
 }
