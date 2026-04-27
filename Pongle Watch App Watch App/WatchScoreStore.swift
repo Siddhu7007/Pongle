@@ -195,6 +195,11 @@ final class WatchScoreStore: NSObject, ObservableObject {
             game.replace(withHistory: rawHistory.compactMap(Player.init(rawValue:)))
         }
 
+        // The phone owns first-server selection; -1 (or absent) means "not chosen".
+        if let raw = payload[ConnectivityKey.firstServer] as? Int {
+            game.firstServer = raw < 0 ? nil : Player(rawValue: raw)
+        }
+
         if let name = payload[ConnectivityKey.playerOneName] as? String {
             playerOneName = Self.limitedName(name)
         }
@@ -358,6 +363,7 @@ private enum ConnectivityKey {
     static let serveSwitchInterval = "serveSwitchInterval"
     static let switchesServeEveryPointFromDeuce = "switchesServeEveryPointFromDeuce"
     static let currentServer = "currentServer"
+    static let firstServer = "firstServer"
     static let gamesToWin = "gamesToWin"
     static let playerOneScore = "playerOneScore"
     static let playerTwoScore = "playerTwoScore"

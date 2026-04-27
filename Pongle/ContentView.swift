@@ -17,13 +17,33 @@ struct ContentView: View {
     private let scoreboardTransition = Animation.easeInOut(duration: 0.26)
 
     var body: some View {
-        ZStack {
-            ScoreboardBackground()
+        GeometryReader { proxy in
+            let isLandscape = proxy.size.width > proxy.size.height
 
-            if isScoreboardCompact {
-                compactLayout
-            } else {
-                heroLayout
+            ZStack(alignment: .topTrailing) {
+                ScoreboardBackground()
+
+                if isScoreboardCompact {
+                    compactLayout
+                } else if isLandscape {
+                    LandscapeScoreboardView(
+                        store: store,
+                        onRequestReset: { isShowingResetConfirmation = true }
+                    )
+                } else {
+                    heroLayout
+                }
+
+                if !isLandscape || isScoreboardCompact {
+                    ScoreboardModeButton(
+                        isCompact: isScoreboardCompact,
+                        isTransitioning: isScoreboardTransitioning,
+                        action: toggleScoreboardMode
+                    )
+                    .padding(.top, 12)
+                    .padding(.trailing, 14)
+                    .zIndex(20)
+                }
             }
         }
         .alert("Reset game?", isPresented: $isShowingResetConfirmation) {
@@ -52,8 +72,6 @@ struct ContentView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 20) {
                     topBar
-                    scoreboardArea
-                        .frame(height: 240)
 
                     MatchControlsDock(
                         isWatchConnected: store.isWatchReachable,
@@ -63,6 +81,8 @@ struct ContentView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 18)
                 .padding(.bottom, 16)
+                .opacity(isScoreboardContentVisible ? 1 : 0)
+                .scaleEffect(isScoreboardContentVisible ? 1 : 0.985, anchor: .top)
             }
 
             bottomActionRail
@@ -125,37 +145,35 @@ struct ContentView: View {
                         onAddPoint: store.addPoint
                     )
                 } else {
+                    let awaitingServeChoice = store.game.awaitingFirstServerChoice
                     HeroScoreboardScene(
                         availableSize: proxy.size,
                         topPlayerName: heroDisplayName(for: .playerTwo),
                         topPlayerScore: store.game.playerTwoScore,
                         topPlayerAccent: store.settings.batColor(for: .playerTwo).accentColor,
-                        topPlayerIsServing: store.game.currentServer == .playerTwo,
+                        topPlayerIsServing: !awaitingServeChoice && store.game.currentServer == .playerTwo,
                         bottomPlayerName: heroDisplayName(for: .playerOne),
                         bottomPlayerScore: store.game.playerOneScore,
                         bottomPlayerAccent: store.settings.batColor(for: .playerOne).accentColor,
-                        bottomPlayerIsServing: store.game.currentServer == .playerOne,
+                        bottomPlayerIsServing: !awaitingServeChoice && store.game.currentServer == .playerOne,
                         winner: store.game.winner,
                         completedGames: store.game.completedGames,
                         gamesToWin: store.game.gamesToWin,
                         isIphoneTapInputEnabled: store.settings.iphoneTapInputEnabled,
-                        onAddPoint: store.addPoint
+                        isAwaitingServeChoice: awaitingServeChoice,
+                        onAddPoint: { player in
+                            if store.game.awaitingFirstServerChoice {
+                                store.setFirstServer(player)
+                            } else {
+                                store.addPoint(to: player)
+                            }
+                        }
                     )
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .opacity(isScoreboardContentVisible ? 1 : 0)
             .scaleEffect(isScoreboardContentVisible ? 1 : 0.985, anchor: .top)
-            .overlay(alignment: .topTrailing) {
-                ScoreboardModeButton(
-                    isCompact: isScoreboardCompact,
-                    isTransitioning: isScoreboardTransitioning,
-                    action: toggleScoreboardMode
-                )
-                .padding(.top, isScoreboardCompact ? 8 : 8)
-                .padding(.trailing, isScoreboardCompact ? 8 : 6)
-                .zIndex(20)
-            }
         }
         .frame(maxWidth: .infinity)
     }
@@ -235,6 +253,7 @@ private struct HeroScoreboardScene: View {
     let completedGames: [CompletedGame]
     let gamesToWin: Int
     let isIphoneTapInputEnabled: Bool
+    let isAwaitingServeChoice: Bool
     let onAddPoint: (Player) -> Void
 
     var body: some View {
@@ -273,6 +292,7 @@ private struct HeroScoreboardScene: View {
                 scoreColumnWidth: scoreColumnWidth,
                 clusterWidth: clusterWidth,
                 isTapInputEnabled: isIphoneTapInputEnabled,
+                isAwaitingServeChoice: isAwaitingServeChoice,
                 showsPlayerName: true
             ) {
                 onAddPoint(.playerTwo)
@@ -314,6 +334,7 @@ private struct HeroScoreboardScene: View {
                 scoreColumnWidth: scoreColumnWidth,
                 clusterWidth: clusterWidth,
                 isTapInputEnabled: isIphoneTapInputEnabled,
+                isAwaitingServeChoice: isAwaitingServeChoice,
                 showsPlayerName: true
             ) {
                 onAddPoint(.playerOne)
@@ -547,18 +568,23 @@ private struct HeroPlayerCluster: View {
     let scoreColumnWidth: CGFloat
     let clusterWidth: CGFloat
     let isTapInputEnabled: Bool
+    let isAwaitingServeChoice: Bool
     let showsPlayerName: Bool
     let action: () -> Void
 
+    private var isInteractive: Bool {
+        isTapInputEnabled || isAwaitingServeChoice
+    }
+
     @ViewBuilder
     var body: some View {
-        if isTapInputEnabled {
+        if isInteractive {
             Button(action: action) {
                 clusterBody
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-            .accessibilityHint("Adds one point for \(playerName)")
+            .accessibilityHint(isAwaitingServeChoice ? "Sets \(playerName) to serve first" : "Adds one point for \(playerName)")
         } else {
             clusterBody
         }
@@ -582,10 +608,16 @@ private struct HeroPlayerCluster: View {
             HeroScoreText(score: score, accent: accent, fontSize: scoreFont, isWinner: isWinner)
                 .frame(width: scoreColumnWidth, alignment: .center)
 
-            ServeBadge(accent: accent, isCompact: false)
-                .opacity(isServing ? 1 : 0)
-                .frame(height: serveBadgeHeight)
-                .accessibilityHidden(!isServing)
+            Group {
+                if isAwaitingServeChoice {
+                    ServeChoiceBadge(accent: accent, isCompact: false)
+                } else {
+                    ServeBadge(accent: accent, isCompact: false)
+                        .opacity(isServing ? 1 : 0)
+                        .accessibilityHidden(!isServing)
+                }
+            }
+            .frame(height: serveBadgeHeight)
         }
         .frame(maxWidth: clusterWidth, minHeight: max(scoreFont * 0.96, 108), alignment: .center)
         .frame(maxWidth: .infinity)
@@ -612,6 +644,28 @@ private struct ServeBadge: View {
                     .stroke(accent.opacity(0.55), lineWidth: 1)
             )
             .shadow(color: accent.opacity(0.28), radius: 5, x: 0, y: 0)
+    }
+}
+
+private struct ServeChoiceBadge: View {
+    let accent: Color
+    let isCompact: Bool
+
+    var body: some View {
+        Text("Tap to Serve")
+            .font(.system(size: isCompact ? 9 : 11, weight: .semibold, design: .rounded))
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .foregroundStyle(accent.opacity(0.78))
+            .padding(.horizontal, isCompact ? 9 : 12)
+            .padding(.vertical, isCompact ? 4 : 5)
+            .background(
+                Capsule()
+                    .stroke(
+                        accent.opacity(0.45),
+                        style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+                    )
+            )
     }
 }
 

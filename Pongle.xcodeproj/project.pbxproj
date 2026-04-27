@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		F1C200012F9B000100F4B296 /* flic2lib in Frameworks */ = {isa = PBXBuildFile; productRef = F1C200022F9B000100F4B296 /* flic2lib */; };
 		5396BB432F97F85F00F4B296 /* Pongle Watch App Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 5396BB392F97F85D00F4B296 /* Pongle Watch App Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F1C200012F9B000100F4B296 /* flic2lib in Frameworks */ = {isa = PBXBuildFile; productRef = F1C200022F9B000100F4B296 /* flic2lib */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -41,19 +41,19 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		F1C200042F9B000100F4B296 /* Exceptions for "Pongle" folder in "Pongle" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 5396BB242F97F62000F4B296 /* Pongle */;
-		};
 		C0D3A1202F98432100F4B296 /* Exceptions for "Pongle Watch App Watch App" folder in "Pongle Watch App Watch App" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 5396BB382F97F85D00F4B296 /* Pongle Watch App Watch App */;
+		};
+		F1C200042F9B000100F4B296 /* Exceptions for "Pongle" folder in "Pongle" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 5396BB242F97F62000F4B296 /* Pongle */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -253,25 +253,6 @@
 			targetProxy = 5396BB412F97F85F00F4B296 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		F1C200032F9B000100F4B296 /* XCRemoteSwiftPackageReference "flic2lib-ios" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/50ButtonsEach/flic2lib-ios";
-			requirement = {
-				kind = revision;
-				revision = 416d4cc5192ae1b14e525fac721016ca5cc3a0eb;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		F1C200022F9B000100F4B296 /* flic2lib */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = F1C200032F9B000100F4B296 /* XCRemoteSwiftPackageReference "flic2lib-ios" */;
-			productName = flic2lib;
-		};
-/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		5396BB302F97F62100F4B296 /* Debug */ = {
@@ -560,6 +541,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		F1C200032F9B000100F4B296 /* XCRemoteSwiftPackageReference "flic2lib-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/50ButtonsEach/flic2lib-ios";
+			requirement = {
+				kind = revision;
+				revision = 416d4cc5192ae1b14e525fac721016ca5cc3a0eb;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F1C200022F9B000100F4B296 /* flic2lib */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F1C200032F9B000100F4B296 /* XCRemoteSwiftPackageReference "flic2lib-ios" */;
+			productName = flic2lib;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 5396BB1D2F97F62000F4B296 /* Project object */;
 }

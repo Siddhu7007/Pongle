@@ -237,6 +237,11 @@ struct MatchControlsDock: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            section(title: "Players") {
+                PlayerCustomizationPanel()
+                    .padding(.vertical, 12)
+            }
+
             section(title: "Settings") {
                 SettingsValueRow(title: "Mode", value: ScoringMode.eleven.shortLabel)
 
@@ -264,11 +269,6 @@ struct MatchControlsDock: View {
                         isOn: $settings.announceWinner
                     )
                 }
-            }
-
-            section(title: "Players") {
-                PlayerCustomizationPanel()
-                    .padding(.vertical, 12)
             }
 
             section(title: "Controls") {

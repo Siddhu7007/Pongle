@@ -89,6 +89,18 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         apply(.reset, source: .iphone)
     }
 
+    /// Sets the first server for the current game from a UI tap. The
+    /// underlying `GameState` ignores the request unless the game is at 0–0,
+    /// so calling this mid-game is a safe no-op.
+    func setFirstServer(_ player: Player) {
+        let previousFirstServer = game.firstServer
+        game.setFirstServer(player)
+        guard game.firstServer != previousFirstServer else {
+            return
+        }
+        broadcastCurrentStateToWatch()
+    }
+
     func toggleAudio() {
         settings.announcementsEnabled.toggle()
 
@@ -281,11 +293,14 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             return
         }
 
-        announcer.speak(scoreAnnouncement(scoringPlayer: nil), voiceIdentifier: settings.voiceIdentifier)
-    }
-
-    private func scoreAnnouncement(scoringPlayer: Player?) -> String {
-        scoreAnnouncementSegments(scoringPlayer: scoringPlayer).joined(separator: " ")
+        let server = game.currentServer
+        let receiver: Player = server == .playerOne ? .playerTwo : .playerOne
+        let segments = [
+            "Score Correction.",
+            "\(settings.displayName(for: server)) serves.",
+            "\(score(for: server)) serving \(score(for: receiver))."
+        ]
+        announcer.speakSegments(segments, voiceIdentifier: settings.voiceIdentifier, pause: 0.5)
     }
 
     private func scoreAnnouncementSegments(scoringPlayer: Player?) -> [String] {
@@ -321,6 +336,7 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             ConnectivityKey.serveSwitchInterval: game.serveSwitchInterval,
             ConnectivityKey.switchesServeEveryPointFromDeuce: game.switchesServeEveryPointFromDeuce,
             ConnectivityKey.currentServer: game.currentServer.rawValue,
+            ConnectivityKey.firstServer: game.firstServer?.rawValue ?? -1,
             ConnectivityKey.gamesToWin: game.gamesToWin,
             ConnectivityKey.playerOneScore: game.playerOneScore,
             ConnectivityKey.playerTwoScore: game.playerTwoScore,
@@ -707,6 +723,7 @@ private enum ConnectivityKey {
     static let serveSwitchInterval = "serveSwitchInterval"
     static let switchesServeEveryPointFromDeuce = "switchesServeEveryPointFromDeuce"
     static let currentServer = "currentServer"
+    static let firstServer = "firstServer"
     static let gamesToWin = "gamesToWin"
     static let playerOneScore = "playerOneScore"
     static let playerTwoScore = "playerTwoScore"
