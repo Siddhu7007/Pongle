@@ -653,7 +653,7 @@ private struct HeroPlayerCluster: View {
     }
 }
 
-private extension View {
+extension View {
     func scoreInputGesture(
         tapAction: (() -> Void)?,
         longPressAction: (() -> Void)?,
@@ -669,7 +669,7 @@ private extension View {
     }
 }
 
-private struct ScoreInputGestureModifier: ViewModifier {
+struct ScoreInputGestureModifier: ViewModifier {
     let tapAction: (() -> Void)?
     let longPressAction: (() -> Void)?
     let accessibilityHint: String

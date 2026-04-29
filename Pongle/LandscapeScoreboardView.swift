@@ -96,6 +96,7 @@ struct LandscapeScoreboardView: View {
             isAwaitingServeChoice: isAwaitingServeChoice,
             nameFontSize: nameFontSize,
             scoreFontSize: scoreFontSize,
+            onLongPress: store.game.canUndo ? { store.undo() } : nil,
             onTap: {
                 if isAwaitingServeChoice {
                     store.setFirstServer(player)
@@ -143,15 +144,28 @@ private struct PlayerPanel: View {
     let isAwaitingServeChoice: Bool
     let nameFontSize: CGFloat
     let scoreFontSize: CGFloat
+    let onLongPress: (() -> Void)?
     let onTap: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
-            panelContent
+        panelContent
+            .scoreInputGesture(
+                tapAction: onTap,
+                longPressAction: onLongPress,
+                accessibilityHint: accessibilityHint
+            )
+    }
+
+    private var accessibilityHint: String {
+        if isAwaitingServeChoice {
+            return onLongPress == nil
+                ? "Tap to choose \(name) to serve first"
+                : "Tap to choose \(name) to serve first, or touch and hold to undo the last point"
         }
-        .buttonStyle(.plain)
-        .contentShape(Rectangle())
-        .accessibilityHint(isAwaitingServeChoice ? "Sets \(name) to serve first" : "Adds one point for \(name)")
+
+        return onLongPress == nil
+            ? "Tap to add one point for \(name)"
+            : "Tap to add one point for \(name), or touch and hold to undo the last point"
     }
 
     private var panelContent: some View {
