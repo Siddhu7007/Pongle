@@ -54,6 +54,7 @@ struct LandscapeScoreboardView: View {
                         rightAccent: store.settings.batColor(for: rightPlayer).accentColor
                     )
                     .padding(.bottom, 16)
+                    .allowsHitTesting(false)
                 }
 
                 HStack(spacing: 8) {
@@ -74,6 +75,7 @@ struct LandscapeScoreboardView: View {
                 }
                 .padding(.top, 12)
                 .padding(.trailing, 16)
+                .zIndex(2)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -94,9 +96,13 @@ struct LandscapeScoreboardView: View {
             isAwaitingServeChoice: isAwaitingServeChoice,
             nameFontSize: nameFontSize,
             scoreFontSize: scoreFontSize,
-            onTap: isAwaitingServeChoice
-                ? { store.setFirstServer(player) }
-                : nil
+            onTap: {
+                if isAwaitingServeChoice {
+                    store.setFirstServer(player)
+                } else {
+                    store.addPoint(to: player)
+                }
+            }
         )
     }
 
@@ -137,21 +143,15 @@ private struct PlayerPanel: View {
     let isAwaitingServeChoice: Bool
     let nameFontSize: CGFloat
     let scoreFontSize: CGFloat
-    let onTap: (() -> Void)?
+    let onTap: () -> Void
 
     var body: some View {
-        let panel = panelContent
-
-        if let onTap {
-            Button(action: onTap) {
-                panel
-            }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-            .accessibilityHint("Sets \(name) to serve first")
-        } else {
-            panel
+        Button(action: onTap) {
+            panelContent
         }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .accessibilityHint(isAwaitingServeChoice ? "Sets \(name) to serve first" : "Adds one point for \(name)")
     }
 
     private var panelContent: some View {

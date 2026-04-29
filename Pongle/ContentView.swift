@@ -142,7 +142,9 @@ struct ContentView: View {
                         isCompact: true,
                         compactHeight: compactHeight,
                         isIphoneTapInputEnabled: store.settings.iphoneTapInputEnabled,
-                        onAddPoint: store.addPoint
+                        canUndo: store.game.canUndo,
+                        onAddPoint: store.addPoint,
+                        onUndo: store.undo
                     )
                 } else {
                     let awaitingServeChoice = store.game.awaitingFirstServerChoice
@@ -161,13 +163,15 @@ struct ContentView: View {
                         gamesToWin: store.game.gamesToWin,
                         isIphoneTapInputEnabled: store.settings.iphoneTapInputEnabled,
                         isAwaitingServeChoice: awaitingServeChoice,
+                        canUndo: store.game.canUndo,
                         onAddPoint: { player in
                             if store.game.awaitingFirstServerChoice {
                                 store.setFirstServer(player)
                             } else {
                                 store.addPoint(to: player)
                             }
-                        }
+                        },
+                        onUndo: store.undo
                     )
                 }
             }
@@ -254,7 +258,9 @@ private struct HeroScoreboardScene: View {
     let gamesToWin: Int
     let isIphoneTapInputEnabled: Bool
     let isAwaitingServeChoice: Bool
+    let canUndo: Bool
     let onAddPoint: (Player) -> Void
+    let onUndo: () -> Void
 
     var body: some View {
         let tableAspectRatio = 577.0 / 433.0
@@ -293,7 +299,9 @@ private struct HeroScoreboardScene: View {
                 clusterWidth: clusterWidth,
                 isTapInputEnabled: isIphoneTapInputEnabled,
                 isAwaitingServeChoice: isAwaitingServeChoice,
-                showsPlayerName: true
+                canUndo: canUndo,
+                showsPlayerName: true,
+                onUndo: onUndo
             ) {
                 onAddPoint(.playerTwo)
             }
@@ -335,7 +343,9 @@ private struct HeroScoreboardScene: View {
                 clusterWidth: clusterWidth,
                 isTapInputEnabled: isIphoneTapInputEnabled,
                 isAwaitingServeChoice: isAwaitingServeChoice,
-                showsPlayerName: true
+                canUndo: canUndo,
+                showsPlayerName: true,
+                onUndo: onUndo
             ) {
                 onAddPoint(.playerOne)
             }
@@ -569,25 +579,42 @@ private struct HeroPlayerCluster: View {
     let clusterWidth: CGFloat
     let isTapInputEnabled: Bool
     let isAwaitingServeChoice: Bool
+    let canUndo: Bool
     let showsPlayerName: Bool
+    let onUndo: () -> Void
     let action: () -> Void
 
-    private var isInteractive: Bool {
-        isTapInputEnabled || isAwaitingServeChoice
+    private var tapAction: (() -> Void)? {
+        isTapInputEnabled || isAwaitingServeChoice ? action : nil
     }
 
-    @ViewBuilder
-    var body: some View {
-        if isInteractive {
-            Button(action: action) {
-                clusterBody
-            }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-            .accessibilityHint(isAwaitingServeChoice ? "Sets \(playerName) to serve first" : "Adds one point for \(playerName)")
-        } else {
-            clusterBody
+    private var longPressAction: (() -> Void)? {
+        canUndo ? onUndo : nil
+    }
+
+    private var accessibilityHint: String {
+        if isAwaitingServeChoice {
+            return canUndo
+                ? "Tap to choose \(playerName) to serve first, or touch and hold to undo the last point"
+                : "Tap to choose \(playerName) to serve first"
         }
+
+        if isTapInputEnabled {
+            return canUndo
+                ? "Tap to add one point for \(playerName), or touch and hold to undo the last point"
+                : "Tap to add one point for \(playerName)"
+        }
+
+        return "Touch and hold to undo the last point"
+    }
+
+    var body: some View {
+        clusterBody
+            .scoreInputGesture(
+                tapAction: tapAction,
+                longPressAction: longPressAction,
+                accessibilityHint: accessibilityHint
+            )
     }
 
     private var clusterBody: some View {
@@ -623,6 +650,83 @@ private struct HeroPlayerCluster: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 1)
         .accessibilityLabel("\(playerName), score \(min(score, 99))\(isServing ? ", serving" : "")")
+    }
+}
+
+private extension View {
+    func scoreInputGesture(
+        tapAction: (() -> Void)?,
+        longPressAction: (() -> Void)?,
+        accessibilityHint: String
+    ) -> some View {
+        modifier(
+            ScoreInputGestureModifier(
+                tapAction: tapAction,
+                longPressAction: longPressAction,
+                accessibilityHint: accessibilityHint
+            )
+        )
+    }
+}
+
+private struct ScoreInputGestureModifier: ViewModifier {
+    let tapAction: (() -> Void)?
+    let longPressAction: (() -> Void)?
+    let accessibilityHint: String
+
+    private var isEnabled: Bool {
+        tapAction != nil || longPressAction != nil
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            accessibilityActions(
+                content
+                    .contentShape(Rectangle())
+                    .gesture(scoreGesture)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint(accessibilityHint)
+            )
+        } else {
+            content
+        }
+    }
+
+    private var scoreGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.55)
+            .exclusively(before: TapGesture())
+            .onEnded { value in
+                switch value {
+                case .first:
+                    longPressAction?()
+                case .second:
+                    tapAction?()
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func accessibilityActions<Content: View>(_ content: Content) -> some View {
+        if let tapAction, let longPressAction {
+            content
+                .accessibilityAction {
+                    tapAction()
+                }
+                .accessibilityAction(named: Text("Undo Last Point")) {
+                    longPressAction()
+                }
+        } else if let tapAction {
+            content
+                .accessibilityAction {
+                    tapAction()
+                }
+        } else if let longPressAction {
+            content
+                .accessibilityAction {
+                    longPressAction()
+                }
+        }
     }
 }
 
@@ -768,7 +872,9 @@ private struct ScoreboardPanels: View {
     let isCompact: Bool
     let compactHeight: CGFloat
     let isIphoneTapInputEnabled: Bool
+    let canUndo: Bool
     let onAddPoint: (Player) -> Void
+    let onUndo: () -> Void
 
     var body: some View {
         VStack(spacing: isCompact ? 8 : 10) {
@@ -835,14 +941,21 @@ private struct ScoreboardPanels: View {
         )
 
         if isIphoneTapInputEnabled {
-            Button {
-                onAddPoint(player)
-            } label: {
-                panel
-            }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-            .accessibilityHint("Adds one point for \(playerName)")
+            panel
+                .scoreInputGesture(
+                    tapAction: { onAddPoint(player) },
+                    longPressAction: canUndo ? onUndo : nil,
+                    accessibilityHint: canUndo
+                        ? "Tap to add one point for \(playerName), or touch and hold to undo the last point"
+                        : "Tap to add one point for \(playerName)"
+                )
+        } else if canUndo {
+            panel
+                .scoreInputGesture(
+                    tapAction: nil,
+                    longPressAction: onUndo,
+                    accessibilityHint: "Touch and hold to undo the last point"
+                )
         } else {
             panel
         }
