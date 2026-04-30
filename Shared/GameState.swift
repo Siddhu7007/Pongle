@@ -101,10 +101,22 @@ struct GameState: Equatable {
     var serveSwitchInterval: Int = ScoringRules.eleven.serveSwitchInterval
     var switchesServeEveryPointFromDeuce: Bool = ScoringRules.eleven.switchesServeEveryPointFromDeuce
 
-    /// First server for the current game. Cleared automatically when a new
-    /// game begins (after a previous game completes) or on reset, so the
-    /// user can re-choose at the start of every game.
-    var firstServer: Player?
+    /// The player chosen to serve first in Game 1. Later games derive their
+    /// opening server from this match-level choice.
+    var matchOpeningServer: Player?
+
+    /// First server for the current game. Game 1 uses the manually chosen
+    /// match opener, Game 2 uses the opposite player, and Game 3 returns to
+    /// the match opener.
+    var firstServer: Player? {
+        guard let matchOpeningServer else {
+            return nil
+        }
+
+        return currentGameNumber.isMultiple(of: 2)
+            ? matchOpeningServer.opposite
+            : matchOpeningServer
+    }
 
     private(set) var history: [Player] = []
 
@@ -132,7 +144,7 @@ struct GameState: Equatable {
     /// True when the current game is at 0–0 and the match isn't over.
     /// Used by the UI to allow first-server selection.
     var canChooseFirstServer: Bool {
-        playerOneScore == 0 && playerTwoScore == 0 && matchWinner == nil
+        playerOneScore == 0 && playerTwoScore == 0 && completedGames.isEmpty && matchWinner == nil
     }
 
     /// True when the user hasn't picked a first server for the current game.
@@ -153,14 +165,12 @@ struct GameState: Equatable {
         guard matchWinner == nil else {
             return
         }
-        let previousCompleted = completedGames.count
-        history.append(player)
 
-        // A new game has started — clear the first-server choice so the user
-        // can re-pick it for the next game. (Skip if the match just ended.)
-        if completedGames.count > previousCompleted, matchWinner == nil {
-            firstServer = nil
+        if matchOpeningServer == nil && completedGames.isEmpty {
+            matchOpeningServer = .playerOne
         }
+
+        history.append(player)
     }
 
     mutating func undoLastPoint() {
@@ -169,7 +179,7 @@ struct GameState: Equatable {
 
     mutating func reset() {
         history.removeAll()
-        firstServer = nil
+        matchOpeningServer = nil
     }
 
     mutating func replace(withHistory newHistory: [Player]) {
@@ -182,7 +192,20 @@ struct GameState: Equatable {
         guard canChooseFirstServer else {
             return
         }
-        firstServer = player
+        matchOpeningServer = player
+    }
+
+    /// Applies a first-server value received from another device for whatever
+    /// game the current history represents, then restores the Game 1 opener.
+    mutating func syncFirstServerForCurrentGame(_ player: Player?) {
+        guard let player else {
+            matchOpeningServer = nil
+            return
+        }
+
+        matchOpeningServer = currentGameNumber.isMultiple(of: 2)
+            ? player.opposite
+            : player
     }
 
     private struct Tally {
@@ -193,6 +216,17 @@ struct GameState: Equatable {
         var completedGames: [CompletedGame] = []
         var currentGameWinner: Player?
         var matchWinner: Player?
+    }
+
+    private var currentGameNumber: Int {
+        let t = tally
+        let completedCount = t.completedGames.count
+
+        if t.matchWinner != nil {
+            return max(completedCount, 1)
+        }
+
+        return completedCount + 1
     }
 
     private var tally: Tally {

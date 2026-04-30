@@ -238,6 +238,10 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         if let rawHistory = message[ConnectivityKey.history] as? [Int] {
             game.replace(withHistory: rawHistory.compactMap(Player.init(rawValue:)))
         }
+
+        if let raw = message[ConnectivityKey.firstServer] as? Int {
+            game.syncFirstServerForCurrentGame(raw < 0 ? nil : Player(rawValue: raw))
+        }
     }
 
     private func handleConnectivityPayload(_ payload: [String: Any]) {

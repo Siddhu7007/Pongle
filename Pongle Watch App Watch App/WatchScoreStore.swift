@@ -158,6 +158,7 @@ final class WatchScoreStore: NSObject, ObservableObject {
             ConnectivityKey.serveSwitchInterval: game.serveSwitchInterval,
             ConnectivityKey.switchesServeEveryPointFromDeuce: game.switchesServeEveryPointFromDeuce,
             ConnectivityKey.currentServer: game.currentServer.rawValue,
+            ConnectivityKey.firstServer: game.firstServer?.rawValue ?? -1,
             ConnectivityKey.gamesToWin: game.gamesToWin,
             ConnectivityKey.playerOneScore: game.playerOneScore,
             ConnectivityKey.playerTwoScore: game.playerTwoScore,
@@ -197,7 +198,7 @@ final class WatchScoreStore: NSObject, ObservableObject {
 
         // The phone owns first-server selection; -1 (or absent) means "not chosen".
         if let raw = payload[ConnectivityKey.firstServer] as? Int {
-            game.firstServer = raw < 0 ? nil : Player(rawValue: raw)
+            game.syncFirstServerForCurrentGame(raw < 0 ? nil : Player(rawValue: raw))
         }
 
         if let name = payload[ConnectivityKey.playerOneName] as? String {
