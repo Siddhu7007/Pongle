@@ -93,12 +93,7 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     /// underlying `GameState` ignores the request unless the game is at 0–0,
     /// so calling this mid-game is a safe no-op.
     func setFirstServer(_ player: Player) {
-        let previousFirstServer = game.firstServer
-        game.setFirstServer(player)
-        guard game.firstServer != previousFirstServer else {
-            return
-        }
-        broadcastCurrentStateToWatch()
+        apply(.firstServer(player: player), source: .iphone)
     }
 
     func toggleAudio() {
@@ -116,14 +111,20 @@ final class PhoneScoreStore: NSObject, ObservableObject {
 
         switch event {
         case .point(let player):
-            accepted = addPoint(to: player)
+            accepted = game.awaitingFirstServerChoice
+                ? selectFirstServer(player)
+                : addPoint(to: player)
+
+        case .firstServer(let player):
+            accepted = selectFirstServer(player)
 
         case .undo:
-            let previousHistoryCount = game.history.count
+            let previousGame = game
+            let hadScoredPoint = !game.history.isEmpty
             game.undoLastPoint()
-            accepted = game.history.count < previousHistoryCount
+            accepted = game != previousGame
 
-            if accepted {
+            if accepted && hadScoredPoint {
                 announceUndo()
             }
 
@@ -193,12 +194,20 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         lastAppliedWatchSequence = watchSequence
 
         switch action {
-        case .point:
+        case .point, .firstServer:
             guard let rawPlayer = message[ConnectivityKey.player] as? Int,
                   let player = Player(rawValue: rawPlayer) else {
                 return
             }
-            apply(.point(player: player), source: .watch)
+
+            switch action {
+            case .point:
+                apply(.point(player: player), source: .watch)
+            case .firstServer:
+                apply(.firstServer(player: player), source: .watch)
+            case .undo, .reset:
+                break
+            }
 
         case .undo:
             apply(.undo, source: .watch)
@@ -206,6 +215,13 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         case .reset:
             apply(.reset, source: .watch)
         }
+    }
+
+    @discardableResult
+    private func selectFirstServer(_ player: Player) -> Bool {
+        let previousFirstServer = game.firstServer
+        game.setFirstServer(player)
+        return game.firstServer != previousFirstServer
     }
 
     @discardableResult

@@ -102,6 +102,11 @@ final class WatchScoreStore: NSObject, ObservableObject {
     }
 
     private func commitPoint(for player: Player) {
+        if game.awaitingFirstServerChoice {
+            commitFirstServer(for: player)
+            return
+        }
+
         let previousHistoryCount = game.history.count
         let previousCompletedGamesCount = game.completedGames.count
         let previousMatchWinner = game.matchWinner
@@ -117,6 +122,21 @@ final class WatchScoreStore: NSObject, ObservableObject {
         watchSequence += 1
 
         sendScoreEvent(action: .point, player: player)
+        publishCurrentState()
+        playPointHaptic(for: player)
+    }
+
+    private func commitFirstServer(for player: Player) {
+        let previousFirstServer = game.firstServer
+        game.setFirstServer(player)
+        guard game.firstServer != previousFirstServer else {
+            return
+        }
+
+        eventText = "\(displayName(for: player)) serves first"
+        watchSequence += 1
+
+        sendScoreEvent(action: .firstServer, player: player)
         publishCurrentState()
         playPointHaptic(for: player)
     }

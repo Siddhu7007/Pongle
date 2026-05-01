@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
     @ObservedObject var store: PhoneScoreStore
@@ -19,11 +20,12 @@ struct ContentView: View {
     var body: some View {
         GeometryReader { proxy in
             let isLandscape = proxy.size.width > proxy.size.height
+            let isIPadPortrait = UIDevice.current.userInterfaceIdiom == .pad && !isLandscape
 
             ZStack(alignment: .topTrailing) {
                 ScoreboardBackground()
 
-                if isScoreboardCompact {
+                if isIPadPortrait || isScoreboardCompact {
                     compactLayout
                 } else if isLandscape {
                     LandscapeScoreboardView(
@@ -34,7 +36,7 @@ struct ContentView: View {
                     heroLayout
                 }
 
-                if !isLandscape || isScoreboardCompact {
+                if (!isLandscape || isScoreboardCompact) && !isIPadPortrait {
                     ScoreboardModeButton(
                         isCompact: isScoreboardCompact,
                         isTransitioning: isScoreboardTransitioning,

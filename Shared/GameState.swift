@@ -22,12 +22,14 @@ enum Player: Int, CaseIterable, Codable, Identifiable {
 
 enum ScoreAction: String {
     case point
+    case firstServer
     case undo
     case reset
 }
 
 enum ScoreEvent: Equatable {
     case point(player: Player)
+    case firstServer(player: Player)
     case undo
     case reset
 }
@@ -134,11 +136,15 @@ struct GameState: Equatable {
     }
 
     var canUndo: Bool {
-        !history.isEmpty
+        !history.isEmpty || canUndoFirstServerChoice
     }
 
     var hasScore: Bool {
-        !history.isEmpty
+        !history.isEmpty || matchOpeningServer != nil
+    }
+
+    var canUndoFirstServerChoice: Bool {
+        history.isEmpty && matchOpeningServer != nil
     }
 
     /// True when the current game is at 0–0 and the match isn't over.
@@ -174,7 +180,11 @@ struct GameState: Equatable {
     }
 
     mutating func undoLastPoint() {
-        _ = history.popLast()
+        if history.isEmpty {
+            matchOpeningServer = nil
+        } else {
+            _ = history.popLast()
+        }
     }
 
     mutating func reset() {

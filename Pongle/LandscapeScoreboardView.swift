@@ -4,10 +4,9 @@ struct LandscapeScoreboardView: View {
     @ObservedObject var store: PhoneScoreStore
     let onRequestReset: () -> Void
 
-    /// Display-only flip of the left/right player layout, so the scoreboard
-    /// can match the players' physical sides of the table. Does NOT change
-    /// scoring, input mapping, serve identity, or any underlying state.
-    @State private var isPlayerOrderFlipped = false
+    /// Display-only starting-side preference. The live layout also flips after
+    /// odd-numbered completed games so it tracks player side changes.
+    @State private var isManualPlayerOrderFlipped = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -17,6 +16,8 @@ struct LandscapeScoreboardView: View {
             let winnerTitleFontSize = clamp(height * 0.18, lo: 58, hi: 128)
             let winnerLabelFontSize = clamp(height * 0.038, lo: 13, hi: 22)
 
+            let isAutomaticPlayerOrderFlipped = !store.game.completedGames.count.isMultiple(of: 2)
+            let isPlayerOrderFlipped = isManualPlayerOrderFlipped != isAutomaticPlayerOrderFlipped
             let leftPlayer: Player = isPlayerOrderFlipped ? .playerTwo : .playerOne
             let rightPlayer: Player = isPlayerOrderFlipped ? .playerOne : .playerTwo
             let awaitingServeChoice = store.game.awaitingFirstServerChoice
@@ -76,7 +77,7 @@ struct LandscapeScoreboardView: View {
                 HStack(spacing: 8) {
                     Spacer()
                     Button {
-                        isPlayerOrderFlipped.toggle()
+                        isManualPlayerOrderFlipped.toggle()
                     } label: {
                         cornerIcon(systemName: "arrow.left.arrow.right")
                     }
