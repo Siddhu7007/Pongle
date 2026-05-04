@@ -7,6 +7,7 @@ struct LandscapeScoreboardView: View {
     /// Display-only starting-side preference. The live layout also flips after
     /// odd-numbered completed games so it tracks player side changes.
     @State private var isManualPlayerOrderFlipped = false
+    @State private var isNameEditorPresented = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -15,6 +16,7 @@ struct LandscapeScoreboardView: View {
             let scoreFontSize = clamp(height * 0.62, lo: 140, hi: 320)
             let winnerTitleFontSize = clamp(height * 0.18, lo: 58, hi: 128)
             let winnerLabelFontSize = clamp(height * 0.038, lo: 13, hi: 22)
+            let usesProminentControls = height >= 520
 
             let isAutomaticPlayerOrderFlipped = !store.game.completedGames.count.isMultiple(of: 2)
             let isPlayerOrderFlipped = isManualPlayerOrderFlipped != isAutomaticPlayerOrderFlipped
@@ -74,27 +76,41 @@ struct LandscapeScoreboardView: View {
                     .allowsHitTesting(false)
                 }
 
-                HStack(spacing: 8) {
-                    Spacer()
-                    Button {
-                        isManualPlayerOrderFlipped.toggle()
-                    } label: {
-                        cornerIcon(systemName: "arrow.left.arrow.right")
-                    }
-                    .accessibilityLabel("Swap player sides")
-
-                    Button(action: onRequestReset) {
-                        cornerIcon(systemName: "arrow.counterclockwise")
-                    }
-                    .disabled(!store.game.hasScore)
-                    .opacity(store.game.hasScore ? 1 : 0.35)
-                    .accessibilityLabel("Reset match")
+                if usesProminentControls {
+                    landscapeControls(usesProminentLayout: true)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .padding(.top, 96)
+                        .padding(.bottom, 116)
+                        .zIndex(2)
+                } else {
+                    landscapeControls(usesProminentLayout: false)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        .padding(.top, 76)
+                        .padding(.bottom, 88)
+                        .zIndex(2)
                 }
-                .padding(.top, 12)
-                .padding(.trailing, 16)
-                .zIndex(2)
+
+                HStack {
+                    Spacer()
+
+                    Button {
+                        isNameEditorPresented = true
+                    } label: {
+                        landscapeCornerIcon(systemName: "pencil")
+                    }
+                    .accessibilityLabel("Edit player names")
+                    .padding(.top, 12)
+                    .padding(.trailing, 16)
+                }
+                .zIndex(3)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .sheet(isPresented: $isNameEditorPresented) {
+            LandscapeNameEditor(settings: store.settings)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(red: 0.055, green: 0.06, blue: 0.065))
         }
     }
 
@@ -124,13 +140,54 @@ struct LandscapeScoreboardView: View {
         )
     }
 
-    private func cornerIcon(systemName: String) -> some View {
-        Image(systemName: systemName)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundColor(.white.opacity(0.6))
-            .frame(width: 34, height: 34)
-            .background(Circle().fill(Color.white.opacity(0.06)))
-            .overlay(Circle().stroke(Color.white.opacity(0.10), lineWidth: 1))
+    @ViewBuilder
+    private func landscapeControls(usesProminentLayout: Bool) -> some View {
+        if usesProminentLayout {
+            VStack(spacing: 12) {
+                controlButtons(usesProminentLayout: true)
+            }
+            .padding(9)
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.black.opacity(0.42))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.34), radius: 16, x: 0, y: 8)
+        } else {
+            HStack(spacing: 10) {
+                controlButtons(usesProminentLayout: false)
+            }
+            .padding(8)
+            .background(
+                Capsule()
+                    .fill(Color.black.opacity(0.34))
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func controlButtons(usesProminentLayout: Bool) -> some View {
+        LandscapeControlButton(
+            title: "Swap",
+            systemName: "arrow.left.arrow.right",
+            isEnabled: true,
+            usesProminentLayout: usesProminentLayout
+        ) {
+            isManualPlayerOrderFlipped.toggle()
+        }
+        .accessibilityLabel("Swap player sides")
+
+        LandscapeControlButton(
+            title: "Reset",
+            systemName: "arrow.counterclockwise",
+            isEnabled: store.game.hasScore,
+            usesProminentLayout: usesProminentLayout,
+            action: onRequestReset
+        )
+        .accessibilityLabel("Reset match")
     }
 
     private func displayName(for player: Player) -> String {
@@ -161,6 +218,125 @@ struct LandscapeScoreboardView: View {
 
     private func clamp(_ value: CGFloat, lo: CGFloat, hi: CGFloat) -> CGFloat {
         min(max(value, lo), hi)
+    }
+
+    private func landscapeCornerIcon(systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 15, weight: .bold))
+            .foregroundColor(.white.opacity(0.72))
+            .frame(width: 38, height: 38)
+            .background(Circle().fill(Color.black.opacity(0.28)))
+            .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+            .shadow(color: Color.black.opacity(0.24), radius: 8, x: 0, y: 4)
+    }
+}
+
+private struct LandscapeNameEditor: View {
+    @ObservedObject var settings: AppSettings
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Text("Player Names")
+                    .font(.system(.title3, design: .rounded, weight: .heavy))
+                    .foregroundStyle(.white)
+
+                Spacer()
+
+                Button("Done") {
+                    dismiss()
+                }
+                .font(.system(.subheadline, design: .rounded, weight: .heavy))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(Color.white.opacity(0.12)))
+            }
+
+            VStack(spacing: 12) {
+                nameField(title: "Player 1", player: .playerOne)
+                nameField(title: "Player 2", player: .playerTwo)
+            }
+        }
+        .padding(24)
+    }
+
+    private func nameField(title: String, player: Player) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.system(.caption, design: .rounded, weight: .heavy))
+                .foregroundStyle(.white.opacity(0.52))
+
+            TextField(title, text: nameBinding(for: player))
+                .font(.system(.title3, design: .rounded, weight: .semibold))
+                .foregroundStyle(.white)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(0.075))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(Color.white.opacity(0.13), lineWidth: 1)
+                )
+        }
+    }
+
+    private func nameBinding(for player: Player) -> Binding<String> {
+        Binding(
+            get: {
+                switch player {
+                case .playerOne: settings.playerOneName
+                case .playerTwo: settings.playerTwoName
+                }
+            },
+            set: { settings.setName($0, for: player) }
+        )
+    }
+}
+
+private struct LandscapeControlButton: View {
+    let title: String
+    let systemName: String
+    let isEnabled: Bool
+    let usesProminentLayout: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            if usesProminentLayout {
+                HStack(spacing: 8) {
+                    Image(systemName: systemName)
+                        .font(.system(size: 20, weight: .bold))
+
+                    Text(title)
+                        .font(.system(size: 17, weight: .heavy, design: .rounded))
+                }
+                .foregroundColor(.white.opacity(isEnabled ? 0.92 : 0.38))
+                .frame(minWidth: 116, minHeight: 56)
+                .background(buttonShape.fill(Color.white.opacity(isEnabled ? 0.15 : 0.06)))
+                .overlay(buttonShape.stroke(Color.white.opacity(isEnabled ? 0.24 : 0.10), lineWidth: 1))
+            } else {
+                Image(systemName: systemName)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.white.opacity(isEnabled ? 0.86 : 0.36))
+                    .frame(width: 54, height: 54)
+                    .background(Circle().fill(Color.white.opacity(isEnabled ? 0.14 : 0.06)))
+                    .overlay(Circle().stroke(Color.white.opacity(isEnabled ? 0.22 : 0.10), lineWidth: 1))
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .contentShape(Rectangle())
+    }
+
+    private var buttonShape: some InsettableShape {
+        Capsule()
     }
 }
 
@@ -234,11 +410,13 @@ private struct PlayerPanel: View {
 
     private var panelContent: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 10) {
+            VStack(spacing: 8) {
                 Text(name)
                     .font(.system(size: nameFontSize, weight: .black, design: .rounded))
                     .foregroundColor(.white)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+                    .allowsTightening(true)
                     .truncationMode(.tail)
                     .layoutPriority(1)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -248,6 +426,7 @@ private struct PlayerPanel: View {
                 }
             }
             .padding(.top, 16)
+            .padding(.horizontal, 12)
             .frame(maxWidth: .infinity)
 
             Spacer(minLength: 0)
