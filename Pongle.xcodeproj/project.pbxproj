@@ -19,6 +19,13 @@
 			remoteGlobalIDString = 5396BB382F97F85D00F4B296;
 			remoteInfo = "Pongle Watch App Watch App";
 		};
+		C0D3B00B2FA0000000F4B296 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 5396BB1D2F97F62000F4B296 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5396BB242F97F62000F4B296;
+			remoteInfo = Pongle;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -38,6 +45,7 @@
 /* Begin PBXFileReference section */
 		5396BB252F97F62000F4B296 /* Pongle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pongle.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5396BB392F97F85D00F4B296 /* Pongle Watch App Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Pongle Watch App Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0D3B0012FA0000000F4B296 /* PongleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PongleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -79,6 +87,11 @@
 			path = Shared;
 			sourceTree = "<group>";
 		};
+		C0D3B0022FA0000000F4B296 /* PongleTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PongleTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -97,6 +110,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0D3B0042FA0000000F4B296 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -106,6 +126,7 @@
 				5396BB272F97F62000F4B296 /* Pongle */,
 				5396BB3A2F97F85D00F4B296 /* Pongle Watch App Watch App */,
 				5396BB482F97FB0000F4B296 /* Shared */,
+				C0D3B0022FA0000000F4B296 /* PongleTests */,
 				5396BB262F97F62000F4B296 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -115,6 +136,7 @@
 			children = (
 				5396BB252F97F62000F4B296 /* Pongle.app */,
 				5396BB392F97F85D00F4B296 /* Pongle Watch App Watch App.app */,
+				C0D3B0012FA0000000F4B296 /* PongleTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -171,6 +193,29 @@
 			productReference = 5396BB392F97F85D00F4B296 /* Pongle Watch App Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C0D3B0062FA0000000F4B296 /* PongleTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0D3B0092FA0000000F4B296 /* Build configuration list for PBXNativeTarget "PongleTests" */;
+			buildPhases = (
+				C0D3B0032FA0000000F4B296 /* Sources */,
+				C0D3B0042FA0000000F4B296 /* Frameworks */,
+				C0D3B0052FA0000000F4B296 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C0D3B00A2FA0000000F4B296 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C0D3B0022FA0000000F4B296 /* PongleTests */,
+			);
+			name = PongleTests;
+			packageProductDependencies = (
+			);
+			productName = PongleTests;
+			productReference = C0D3B0012FA0000000F4B296 /* PongleTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -186,6 +231,10 @@
 					};
 					5396BB382F97F85D00F4B296 = {
 						CreatedOnToolsVersion = 26.4;
+					};
+					C0D3B0062FA0000000F4B296 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = 5396BB242F97F62000F4B296;
 					};
 				};
 			};
@@ -208,6 +257,7 @@
 			targets = (
 				5396BB242F97F62000F4B296 /* Pongle */,
 				5396BB382F97F85D00F4B296 /* Pongle Watch App Watch App */,
+				C0D3B0062FA0000000F4B296 /* PongleTests */,
 			);
 		};
 /* End PBXProject section */
@@ -221,6 +271,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		5396BB372F97F85D00F4B296 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0D3B0052FA0000000F4B296 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -244,6 +301,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0D3B0032FA0000000F4B296 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -251,6 +315,11 @@
 			isa = PBXTargetDependency;
 			target = 5396BB382F97F85D00F4B296 /* Pongle Watch App Watch App */;
 			targetProxy = 5396BB412F97F85F00F4B296 /* PBXContainerItemProxy */;
+		};
+		C0D3B00A2FA0000000F4B296 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5396BB242F97F62000F4B296 /* Pongle */;
+			targetProxy = C0D3B00B2FA0000000F4B296 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -395,13 +464,18 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cynqventures.pongle;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+					LD_RUNPATH_SEARCH_PATHS = (
+						"$(inherited)",
+						"@executable_path/Frameworks",
+					);
+					MARKETING_VERSION = 1.0;
+					OTHER_LDFLAGS = (
+						"$(inherited)",
+						"-framework",
+						AppIntents,
+					);
+					PRODUCT_BUNDLE_IDENTIFIER = com.cynqventures.pongle;
+					PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -431,13 +505,18 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cynqventures.pongle;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+					LD_RUNPATH_SEARCH_PATHS = (
+						"$(inherited)",
+						"@executable_path/Frameworks",
+					);
+					MARKETING_VERSION = 1.0;
+					OTHER_LDFLAGS = (
+						"$(inherited)",
+						"-framework",
+						AppIntents,
+					);
+					PRODUCT_BUNDLE_IDENTIFIER = com.cynqventures.pongle;
+					PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -460,13 +539,18 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_ENABLE_CFBUNDLEICONS_MERGE = NO;
 				INFOPLIST_FILE = "Pongle Watch App Watch App/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cynqventures.pongle.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+					LD_RUNPATH_SEARCH_PATHS = (
+						"$(inherited)",
+						"@executable_path/Frameworks",
+					);
+					MARKETING_VERSION = 1.0;
+					OTHER_LDFLAGS = (
+						"$(inherited)",
+						"-framework",
+						AppIntents,
+					);
+					PRODUCT_BUNDLE_IDENTIFIER = com.cynqventures.pongle.watchkitapp;
+					PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -492,13 +576,18 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_ENABLE_CFBUNDLEICONS_MERGE = NO;
 				INFOPLIST_FILE = "Pongle Watch App Watch App/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cynqventures.pongle.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+					LD_RUNPATH_SEARCH_PATHS = (
+						"$(inherited)",
+						"@executable_path/Frameworks",
+					);
+					MARKETING_VERSION = 1.0;
+					OTHER_LDFLAGS = (
+						"$(inherited)",
+						"-framework",
+						AppIntents,
+					);
+					PRODUCT_BUNDLE_IDENTIFIER = com.cynqventures.pongle.watchkitapp;
+					PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -509,6 +598,76 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		C0D3B0072FA0000000F4B296 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 4L2HM5CCW9;
+				ENABLE_TESTING_SEARCH_PATHS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+					LD_RUNPATH_SEARCH_PATHS = (
+						"$(inherited)",
+						"@executable_path/Frameworks",
+						"@loader_path/Frameworks",
+					);
+					MARKETING_VERSION = 1.0;
+					OTHER_LDFLAGS = (
+						"$(inherited)",
+						"-framework",
+						AppIntents,
+					);
+					PRODUCT_BUNDLE_IDENTIFIER = com.cynqventures.pongleTests;
+					PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pongle.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pongle";
+				TEST_TARGET_NAME = Pongle;
+			};
+			name = Debug;
+		};
+		C0D3B0082FA0000000F4B296 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 2;
+				DEVELOPMENT_TEAM = 4L2HM5CCW9;
+				ENABLE_TESTING_SEARCH_PATHS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+					LD_RUNPATH_SEARCH_PATHS = (
+						"$(inherited)",
+						"@executable_path/Frameworks",
+						"@loader_path/Frameworks",
+					);
+					MARKETING_VERSION = 1.0;
+					OTHER_LDFLAGS = (
+						"$(inherited)",
+						"-framework",
+						AppIntents,
+					);
+					PRODUCT_BUNDLE_IDENTIFIER = com.cynqventures.pongleTests;
+					PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Pongle.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Pongle";
+				TEST_TARGET_NAME = Pongle;
 			};
 			name = Release;
 		};
@@ -538,6 +697,15 @@
 			buildConfigurations = (
 				5396BB452F97F85F00F4B296 /* Debug */,
 				5396BB462F97F85F00F4B296 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0D3B0092FA0000000F4B296 /* Build configuration list for PBXNativeTarget "PongleTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0D3B0072FA0000000F4B296 /* Debug */,
+				C0D3B0082FA0000000F4B296 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

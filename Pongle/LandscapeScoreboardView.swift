@@ -234,6 +234,7 @@ struct LandscapeScoreboardView: View {
 private struct LandscapeNameEditor: View {
     @ObservedObject var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
+    @FocusState private var focusedNameField: LandscapeNameFieldFocus?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -245,6 +246,7 @@ private struct LandscapeNameEditor: View {
                 Spacer()
 
                 Button("Done") {
+                    focusedNameField = nil
                     dismiss()
                 }
                 .font(.system(.subheadline, design: .rounded, weight: .heavy))
@@ -263,27 +265,55 @@ private struct LandscapeNameEditor: View {
     }
 
     private func nameField(title: String, player: Player) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+        let focusID = LandscapeNameFieldFocus(player: player)
+
+        return VStack(alignment: .leading, spacing: 7) {
             Text(title)
                 .font(.system(.caption, design: .rounded, weight: .heavy))
-                .foregroundStyle(.white.opacity(0.52))
+                .foregroundStyle(.white.opacity(0.62))
 
-            TextField(title, text: nameBinding(for: player))
+            ZStack(alignment: .trailing) {
+                TextField(
+                    title,
+                    text: nameBinding(for: player),
+                    prompt: Text(title).foregroundColor(.white.opacity(0.72))
+                )
                 .font(.system(.title3, design: .rounded, weight: .semibold))
                 .foregroundStyle(.white)
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
                 .submitLabel(.done)
-                .padding(.horizontal, 14)
+                .focused($focusedNameField, equals: focusID)
+                .onSubmit {
+                    focusedNameField = nil
+                }
+                .accessibilityLabel("\(title) name")
+                .padding(.leading, 14)
+                .padding(.trailing, 42)
                 .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.white.opacity(0.075))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.13), lineWidth: 1)
-                )
+
+                Image(systemName: "pencil")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.trailing, 14)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(0.095))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            )
+            .tint(.pongleAccent)
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    focusedNameField = focusID
+                }
+            )
         }
     }
 
@@ -297,6 +327,18 @@ private struct LandscapeNameEditor: View {
             },
             set: { settings.setName($0, for: player) }
         )
+    }
+}
+
+private enum LandscapeNameFieldFocus: Hashable {
+    case playerOne
+    case playerTwo
+
+    init(player: Player) {
+        switch player {
+        case .playerOne: self = .playerOne
+        case .playerTwo: self = .playerTwo
+        }
     }
 }
 

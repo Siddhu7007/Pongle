@@ -76,6 +76,33 @@ enum PlayerBatColor: String, CaseIterable, Identifiable {
     }
 }
 
+enum AnnouncementSpeed: String, CaseIterable, Identifiable {
+    case oneX = "1x"
+    case onePointFiveX = "1.5x"
+    case twoX = "2x"
+    case twoPointFiveX = "2.5x"
+
+    var id: String { rawValue }
+    var label: String { rawValue }
+
+    var speechRate: Float {
+        switch self {
+        case .oneX:
+            return Self.clamped(0.50)
+        case .onePointFiveX:
+            return Self.clamped(0.58)
+        case .twoX:
+            return Self.clamped(0.66)
+        case .twoPointFiveX:
+            return Self.clamped(0.74)
+        }
+    }
+
+    private static func clamped(_ rate: Float) -> Float {
+        min(max(rate, AVSpeechUtteranceMinimumSpeechRate), AVSpeechUtteranceMaximumSpeechRate)
+    }
+}
+
 // MARK: - AppSettings
 
 @MainActor
@@ -88,6 +115,12 @@ final class AppSettings: ObservableObject {
         static let announcementsEnabled = "pongle.announcementsEnabled"
         static let announceScore = "pongle.announceScore"
         static let announceWinner = "pongle.announceWinner"
+        static let announcePointWinner = "pongle.announcePointWinner"
+        static let announceNextServer = "pongle.announceNextServer"
+        static let announceCurrentScore = "pongle.announceCurrentScore"
+        static let announceCriticalPoints = "pongle.announceCriticalPoints"
+        static let announceDeuce = "pongle.announceDeuce"
+        static let announcementSpeed = "pongle.announcementSpeed"
         static let voiceIdentifier = "pongle.voiceIdentifier"
         static let playerOneName = "pongle.playerOneName"
         static let playerTwoName = "pongle.playerTwoName"
@@ -122,6 +155,30 @@ final class AppSettings: ObservableObject {
 
     @Published var announceWinner: Bool {
         didSet { UserDefaults.standard.set(announceWinner, forKey: Key.announceWinner) }
+    }
+
+    @Published var announcePointWinner: Bool {
+        didSet { UserDefaults.standard.set(announcePointWinner, forKey: Key.announcePointWinner) }
+    }
+
+    @Published var announceNextServer: Bool {
+        didSet { UserDefaults.standard.set(announceNextServer, forKey: Key.announceNextServer) }
+    }
+
+    @Published var announceCurrentScore: Bool {
+        didSet { UserDefaults.standard.set(announceCurrentScore, forKey: Key.announceCurrentScore) }
+    }
+
+    @Published var announceCriticalPoints: Bool {
+        didSet { UserDefaults.standard.set(announceCriticalPoints, forKey: Key.announceCriticalPoints) }
+    }
+
+    @Published var announceDeuce: Bool {
+        didSet { UserDefaults.standard.set(announceDeuce, forKey: Key.announceDeuce) }
+    }
+
+    @Published var announcementSpeed: AnnouncementSpeed {
+        didSet { UserDefaults.standard.set(announcementSpeed.rawValue, forKey: Key.announcementSpeed) }
     }
 
     @Published var voiceIdentifier: String {
@@ -164,6 +221,12 @@ final class AppSettings: ObservableObject {
         self.announcementsEnabled = (defaults.object(forKey: Key.announcementsEnabled) as? Bool) ?? true
         self.announceScore = (defaults.object(forKey: Key.announceScore) as? Bool) ?? true
         self.announceWinner = (defaults.object(forKey: Key.announceWinner) as? Bool) ?? true
+        self.announcePointWinner = (defaults.object(forKey: Key.announcePointWinner) as? Bool) ?? false
+        self.announceNextServer = (defaults.object(forKey: Key.announceNextServer) as? Bool) ?? false
+        self.announceCurrentScore = (defaults.object(forKey: Key.announceCurrentScore) as? Bool) ?? true
+        self.announceCriticalPoints = (defaults.object(forKey: Key.announceCriticalPoints) as? Bool) ?? true
+        self.announceDeuce = (defaults.object(forKey: Key.announceDeuce) as? Bool) ?? true
+        self.announcementSpeed = AnnouncementSpeed(rawValue: defaults.string(forKey: Key.announcementSpeed) ?? "") ?? .oneX
         let preferredVoiceIdentifier = Self.samanthaVoiceIdentifier() ?? ""
         self.voiceIdentifier = preferredVoiceIdentifier
         defaults.set(preferredVoiceIdentifier, forKey: Key.voiceIdentifier)
@@ -202,6 +265,10 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    var announcementSpeechRate: Float {
+        announcementSpeed.speechRate
+    }
+
     func setName(_ name: String, for player: Player) {
         let limitedName = Self.limitedPlayerName(name)
         switch player {
@@ -234,6 +301,7 @@ struct MatchControlsDock: View {
     @EnvironmentObject var settings: AppSettings
     let isWatchConnected: Bool
     @ObservedObject var flicInput: FlicInputController
+    @State private var isAnnouncementDetailsExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -256,19 +324,27 @@ struct MatchControlsDock: View {
                     isOn: $settings.announcementsEnabled
                 )
 
-                if settings.announcementsEnabled {
-                    divider
-                    SettingsToggleRow(
-                        title: "Speak score after point",
-                        isOn: $settings.announceScore
-                    )
+                divider
 
-                    divider
-                    SettingsToggleRow(
-                        title: "Speak game winner",
-                        isOn: $settings.announceWinner
-                    )
-                }
+                SettingsToggleRow(
+                    title: "Speak score after point",
+                    isOn: $settings.announceScore
+                )
+                .disabled(!settings.announcementsEnabled)
+                .opacity(settings.announcementsEnabled ? 1 : 0.48)
+
+                divider
+
+                SettingsToggleRow(
+                    title: "Speak game winner",
+                    isOn: $settings.announceWinner
+                )
+                .disabled(!settings.announcementsEnabled)
+                .opacity(settings.announcementsEnabled ? 1 : 0.48)
+
+                divider
+
+                AnnouncementDetailsDisclosure(isExpanded: $isAnnouncementDetailsExpanded)
             }
 
             section(title: "Controls") {
@@ -334,21 +410,116 @@ struct MatchControlsDock: View {
 
 }
 
+private struct AnnouncementDetailsDisclosure: View {
+    @EnvironmentObject var settings: AppSettings
+    @Binding var isExpanded: Bool
+
+    private var pointControlsEnabled: Bool {
+        settings.announcementsEnabled && settings.announceScore
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(spacing: 0) {
+                announcementToggle("Point Winner", isOn: $settings.announcePointWinner)
+
+                divider
+
+                announcementToggle("Next Server", isOn: $settings.announceNextServer)
+
+                divider
+
+                announcementToggle("Current Score", isOn: $settings.announceCurrentScore)
+
+                divider
+
+                announcementToggle("Set / Match Point", isOn: $settings.announceCriticalPoints)
+
+                divider
+
+                announcementToggle("Deuce", isOn: $settings.announceDeuce)
+
+                divider
+
+                speedPicker
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color.pongleAccent)
+                    .frame(width: 20)
+
+                Text("Customize Announcements")
+                    .font(.system(.subheadline, design: .rounded, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.88))
+
+                Spacer()
+
+                Text(settings.announcementSpeed.label)
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+            }
+            .frame(minHeight: 42)
+            .contentShape(Rectangle())
+        }
+        .tint(.white.opacity(0.58))
+        .disabled(!settings.announcementsEnabled)
+        .opacity(settings.announcementsEnabled ? 1 : 0.48)
+    }
+
+    private func announcementToggle(_ title: String, isOn: Binding<Bool>) -> some View {
+        SettingsToggleRow(title: title, isOn: isOn)
+            .disabled(!pointControlsEnabled)
+            .opacity(pointControlsEnabled ? 1 : 0.5)
+    }
+
+    private var speedPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Speech Speed")
+                .font(.system(.caption, design: .rounded, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.6))
+
+            Picker("Speech Speed", selection: $settings.announcementSpeed) {
+                ForEach(AnnouncementSpeed.allCases) { speed in
+                    Text(speed.label).tag(speed)
+                }
+            }
+            .pickerStyle(.segmented)
+            .tint(Color.pongleAccent)
+        }
+        .padding(.vertical, 10)
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.08))
+            .frame(height: 1)
+    }
+}
+
 private struct PlayerCustomizationPanel: View {
     @EnvironmentObject var settings: AppSettings
+    @FocusState private var focusedNameField: PlayerNameFieldFocus?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             PlayerCustomizationCard(
                 player: .playerOne,
                 name: nameBinding(for: .playerOne),
-                selectedColor: batColorBinding(for: .playerOne)
+                selectedColor: batColorBinding(for: .playerOne),
+                focusedNameField: $focusedNameField
             )
 
             PlayerCustomizationCard(
                 player: .playerTwo,
                 name: nameBinding(for: .playerTwo),
-                selectedColor: batColorBinding(for: .playerTwo)
+                selectedColor: batColorBinding(for: .playerTwo),
+                focusedNameField: $focusedNameField
             )
         }
     }
@@ -373,10 +544,23 @@ private struct PlayerCustomizationPanel: View {
     }
 }
 
+private enum PlayerNameFieldFocus: Hashable {
+    case playerOne
+    case playerTwo
+
+    init(player: Player) {
+        switch player {
+        case .playerOne: self = .playerOne
+        case .playerTwo: self = .playerTwo
+        }
+    }
+}
+
 private struct PlayerCustomizationCard: View {
     let player: Player
     @Binding var name: String
     @Binding var selectedColor: PlayerBatColor
+    let focusedNameField: FocusState<PlayerNameFieldFocus?>.Binding
 
     @State private var isPickerPresented = false
 
@@ -416,26 +600,11 @@ private struct PlayerCustomizationCard: View {
                     .presentationCompactAdaptation(.popover)
             }
 
-            TextField(player.displayName, text: $name)
-                .font(.system(.footnote, design: .rounded, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.92))
-                .multilineTextAlignment(.center)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .textInputAutocapitalization(.words)
-                .autocorrectionDisabled()
-                .submitLabel(.done)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 7)
-                .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.white.opacity(0.04))
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                }
+            PlayerNameTextField(
+                player: player,
+                name: $name,
+                focusedNameField: focusedNameField
+            )
         }
         .padding(10)
         .frame(maxWidth: .infinity)
@@ -447,6 +616,64 @@ private struct PlayerCustomizationCard: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.white.opacity(0.07), lineWidth: 1)
         }
+    }
+}
+
+private struct PlayerNameTextField: View {
+    let player: Player
+    @Binding var name: String
+    let focusedNameField: FocusState<PlayerNameFieldFocus?>.Binding
+
+    private var focusID: PlayerNameFieldFocus {
+        PlayerNameFieldFocus(player: player)
+    }
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            TextField(
+                player.displayName,
+                text: $name,
+                prompt: Text(player.displayName).foregroundColor(.white.opacity(0.72))
+            )
+            .font(.system(.footnote, design: .rounded, weight: .semibold))
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.center)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .textInputAutocapitalization(.words)
+            .autocorrectionDisabled()
+            .submitLabel(.done)
+            .focused(focusedNameField, equals: focusID)
+            .onSubmit {
+                focusedNameField.wrappedValue = nil
+            }
+            .accessibilityLabel("\(player.displayName) name")
+            .padding(.horizontal, 26)
+            .padding(.vertical, 9)
+
+            Image(systemName: "pencil")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white.opacity(0.5))
+                .padding(.trailing, 10)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 38)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.white.opacity(0.085))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.white.opacity(0.18), lineWidth: 1)
+        }
+        .tint(.pongleAccent)
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                focusedNameField.wrappedValue = focusID
+            }
+        )
     }
 }
 
