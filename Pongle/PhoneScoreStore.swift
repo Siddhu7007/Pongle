@@ -47,6 +47,29 @@ struct ScoreAnnouncementText {
     }
 
     @MainActor
+    static func undoText(for game: GameState, settings: AppSettings) -> String? {
+        var parts: [String] = []
+
+        if settings.announceUndoLastPoint {
+            parts.append("Undo Last Point")
+        }
+
+        if settings.announceNextServer {
+            parts.append("\(settings.displayName(for: game.currentServer)) serves")
+        }
+
+        if settings.announceCurrentScore {
+            parts.append(servingScoreText(for: game))
+
+            if let criticalText = criticalText(for: game, settings: settings) {
+                parts.append(criticalText)
+            }
+        }
+
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    @MainActor
     private static func criticalText(for game: GameState, settings: AppSettings) -> String? {
         if settings.announceCriticalPoints, isMatchPoint(in: game) {
             return "Match Point"
@@ -141,7 +164,30 @@ struct ScoreAnnouncementText {
 final class PhoneScoreStore: NSObject, ObservableObject {
     @Published private(set) var game = GameState()
     @Published private(set) var isWatchReachable = false
+    /// True when a Watch is paired AND the Pongle Watch app is installed.
+    /// Unlike `isWatchReachable`, this stays stable across the Watch screen
+    /// sleeping/waking — so UI that depends on "is external input available
+    /// at all" doesn't flicker.
+    @Published private(set) var isWatchAppAvailable = false
     @Published private(set) var lastConnectivityError: String?
+
+    /// True when the user has a real alternative to iPhone taps:
+    /// either a paired Watch with the Pongle app installed, or Flic enabled.
+    var externalInputAvailable: Bool {
+        isWatchAppAvailable || settings.flicInputEnabled
+    }
+
+    /// One-input-per-player is on AND both players have a source (2 Flic, or 1 Flic + 1 Watch).
+    var hasDualInputsAssigned: Bool {
+        settings.oneInputPerPlayer && settings.bothPlayersHaveInput
+    }
+
+    /// The tap-input state actually used by the UI. Honors the user's
+    /// stored preference when an external input device is available;
+    /// otherwise forces tap input ON so the scoreboard isn't a dead end.
+    var effectiveTapInputEnabled: Bool {
+        settings.iphoneTapInputEnabled || !externalInputAvailable
+    }
 
     let settings: AppSettings
     lazy var flicInput = FlicInputController(settings: settings) { [weak self] event in
@@ -344,9 +390,13 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         switch action {
         case .point, .firstServer:
             guard let rawPlayer = message[ConnectivityKey.player] as? Int,
-                  let player = Player(rawValue: rawPlayer) else {
+                  let sentPlayer = Player(rawValue: rawPlayer) else {
                 return
             }
+
+            // Dual mode: the watch is one player's single-tap input → collapse any
+            // tap (the watch may still send single=P1/double=P2) to that player.
+            let player = (settings.oneInputPerPlayer ? settings.watchAssignedPlayer : nil) ?? sentPlayer
 
             switch action {
             case .point:
@@ -369,7 +419,13 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     private func selectFirstServer(_ player: Player) -> Bool {
         let previousFirstServer = game.firstServer
         game.setFirstServer(player)
-        return game.firstServer != previousFirstServer
+        let didSelectFirstServer = game.firstServer != previousFirstServer
+
+        if didSelectFirstServer {
+            announceFirstServerSelection(player)
+        }
+
+        return didSelectFirstServer
     }
 
     @discardableResult
@@ -390,7 +446,7 @@ final class PhoneScoreStore: NSObject, ObservableObject {
         return true
     }
 
-    private func applyRemoteSnapshot(from message: [String: Any]) {
+    func applyRemoteSnapshot(from message: [String: Any]) {
         guard (message[ConnectivityKey.source] as? String) == ConnectivitySource.watch,
               let watchSequence = Self.sequenceValue(from: message, key: ConnectivityKey.watchSequence),
               watchSequence > lastAppliedWatchSequence else {
@@ -409,6 +465,18 @@ final class PhoneScoreStore: NSObject, ObservableObject {
 
         if let raw = message[ConnectivityKey.firstServer] as? Int {
             game.syncFirstServerForCurrentGame(raw < 0 ? nil : Player(rawValue: raw))
+        }
+
+        // The scoreEvent (sendMessage) path is what normally announces a
+        // watch-driven first-server choice via `selectFirstServer`. If the
+        // snapshot (updateApplicationContext) wins the delivery race, or
+        // sendMessage was skipped because the phone wasn't reachable, the
+        // announcement is lost. Guarded on empty history so we don't double
+        // up with the point announcement below when both arrive together.
+        if previousGame.firstServer == nil,
+           let chosenServer = game.firstServer,
+           game.history.isEmpty {
+            announceFirstServerSelection(chosenServer)
         }
 
         if didReplaceHistory {
@@ -487,19 +555,32 @@ final class PhoneScoreStore: NSObject, ObservableObject {
     }
 
     private func announceUndo() {
-        guard settings.announcementsEnabled, settings.announceScore else {
+        guard settings.announcementsEnabled else {
             return
         }
 
-        announceCurrentScoreState(pointWinner: nil)
+        announceScoreText(ScoreAnnouncementText.undoText(for: game, settings: settings))
+    }
+
+    private func announceFirstServerSelection(_ player: Player) {
+        guard settings.announcementsEnabled else {
+            return
+        }
+
+        let text = "\(settings.displayName(for: player)) serves"
+        announcer.speak(text, voiceIdentifier: settings.voiceIdentifier, rate: settings.announcementSpeechRate)
     }
 
     private func announceCurrentScoreState(pointWinner: Player?) {
+        announceScoreText(ScoreAnnouncementText.text(for: game, settings: settings, pointWinner: pointWinner))
+    }
+
+    private func announceScoreText(_ text: String?) {
         guard game.matchWinner == nil else {
             return
         }
 
-        guard let text = ScoreAnnouncementText.text(for: game, settings: settings, pointWinner: pointWinner) else {
+        guard let text else {
             lastAnnouncedScoreState = nil
             return
         }
@@ -599,10 +680,12 @@ extension PhoneScoreStore: WCSessionDelegate {
         error: Error?
     ) {
         let isReachable = session.isReachable
+        let isAppAvailable = session.isPaired && session.isWatchAppInstalled
         let errorMessage = error?.localizedDescription
 
         Task { @MainActor [weak self] in
             self?.isWatchReachable = isReachable
+            self?.isWatchAppAvailable = isAppAvailable
             self?.lastConnectivityError = errorMessage
             self?.broadcastCurrentStateToWatch()
         }
@@ -617,29 +700,43 @@ extension PhoneScoreStore: WCSessionDelegate {
     nonisolated func sessionDidDeactivate(_ session: WCSession) {
         session.activate()
 
+        let isReachable = session.isReachable
+        let isAppAvailable = session.isPaired && session.isWatchAppInstalled
+
         Task { @MainActor [weak self] in
-            self?.isWatchReachable = session.isReachable
+            self?.isWatchReachable = isReachable
+            self?.isWatchAppAvailable = isAppAvailable
         }
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         let isReachable = session.isReachable
+        let isAppAvailable = session.isPaired && session.isWatchAppInstalled
 
         Task { @MainActor [weak self] in
             self?.isWatchReachable = isReachable
+            self?.isWatchAppAvailable = isAppAvailable
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        let isReachable = session.isReachable
+        let isAppAvailable = session.isPaired && session.isWatchAppInstalled
+
         Task { @MainActor [weak self] in
-            self?.isWatchReachable = session.isReachable
+            self?.isWatchReachable = isReachable
+            self?.isWatchAppAvailable = isAppAvailable
             self?.handleConnectivityPayload(message)
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        let isReachable = session.isReachable
+        let isAppAvailable = session.isPaired && session.isWatchAppInstalled
+
         Task { @MainActor [weak self] in
-            self?.isWatchReachable = session.isReachable
+            self?.isWatchReachable = isReachable
+            self?.isWatchAppAvailable = isAppAvailable
             self?.handleConnectivityPayload(applicationContext)
         }
     }

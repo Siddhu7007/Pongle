@@ -62,6 +62,20 @@ struct LandscapeScoreboardView: View {
                     .zIndex(1)
                 }
 
+                if awaitingServeChoice {
+                    FirstServerChoicePrompt(
+                        playerOneName: displayName(for: .playerOne),
+                        playerTwoName: displayName(for: .playerTwo),
+                        inputMode: firstServerChoiceInputMode,
+                        isCompact: false
+                    )
+                    .padding(.horizontal, 44)
+                    .padding(.top, max(height * 0.19, 150))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .allowsHitTesting(false)
+                    .zIndex(2.5)
+                }
+
                 VStack {
                     Spacer()
                     PastGamesRow(
@@ -130,13 +144,13 @@ struct LandscapeScoreboardView: View {
             nameFontSize: nameFontSize,
             scoreFontSize: scoreFontSize,
             onLongPress: store.game.canUndo ? { store.undo() } : nil,
-            onTap: {
+            onTap: store.effectiveTapInputEnabled ? {
                 if isAwaitingServeChoice {
                     store.setFirstServer(player)
                 } else {
                     store.addPoint(to: player)
                 }
-            }
+            } : nil
         )
     }
 
@@ -201,6 +215,14 @@ struct LandscapeScoreboardView: View {
     private func winnerTitle(for player: Player) -> String {
         let name = displayName(for: player)
         return name == "You" ? "You Win" : "\(name) Wins"
+    }
+
+    private var firstServerChoiceInputMode: FirstServerChoiceInputMode {
+        FirstServerChoiceInputMode.mode(
+            tapInputEnabled: store.effectiveTapInputEnabled,
+            externalInputAvailable: store.externalInputAvailable,
+            dualInputsAssigned: store.hasDualInputsAssigned
+        )
     }
 
     private func currentScore(for player: Player) -> Int? {
@@ -427,7 +449,7 @@ private struct PlayerPanel: View {
     let nameFontSize: CGFloat
     let scoreFontSize: CGFloat
     let onLongPress: (() -> Void)?
-    let onTap: () -> Void
+    let onTap: (() -> Void)?
 
     var body: some View {
         panelContent
@@ -440,9 +462,19 @@ private struct PlayerPanel: View {
 
     private var accessibilityHint: String {
         if isAwaitingServeChoice {
+            if onTap == nil {
+                return onLongPress == nil
+                    ? "Use the connected input device to choose the first server"
+                    : "Use the connected input device to choose the first server, or touch and hold to undo the last point"
+            }
+
             return onLongPress == nil
                 ? "Tap to choose \(name) to serve first"
                 : "Tap to choose \(name) to serve first, or touch and hold to undo the last point"
+        }
+
+        if onTap == nil {
+            return "Touch and hold to undo the last point"
         }
 
         return onLongPress == nil
@@ -464,7 +496,7 @@ private struct PlayerPanel: View {
                     .frame(maxWidth: .infinity, alignment: .center)
 
                 if isAwaitingServeChoice {
-                    ServeChoicePill(accent: accent)
+                    Color.clear
                 }
             }
             .padding(.top, 16)
@@ -516,27 +548,6 @@ private struct ServeIndicatorBar: View {
             .frame(width: width, height: height)
             .opacity(opacity)
             .accessibilityHidden(!isVisible)
-    }
-}
-
-private struct ServeChoicePill: View {
-    let accent: Color
-
-    var body: some View {
-        Text("Tap to Serve")
-            .font(.system(size: 11, weight: .heavy, design: .rounded))
-            .tracking(0.8)
-            .textCase(.uppercase)
-            .foregroundColor(accent.opacity(0.85))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .stroke(
-                        accent.opacity(0.55),
-                        style: StrokeStyle(lineWidth: 1, dash: [3, 3])
-                    )
-            )
     }
 }
 

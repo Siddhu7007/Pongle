@@ -35,6 +35,8 @@ final class FlicInputController: NSObject, ObservableObject {
     private var hasRestoredManagerState = false
     private var pendingScanAfterRestore = false
     private var pendingConnectAfterRestore = false
+    /// The player a pending per-slot scan should assign its button to (dual mode).
+    private var pendingAssignmentPlayer: Player?
 
     init(settings: AppSettings, eventHandler: @escaping (ScoreEvent) -> Void) {
         self.settings = settings
@@ -96,7 +98,12 @@ final class FlicInputController: NSObject, ObservableObject {
                 if let button {
                     self.prepare(button)
                     self.settings.flicInputEnabled = true
+                    if self.settings.oneInputPerPlayer {
+                        let target = self.pendingAssignmentPlayer ?? self.lowestUnassignedPlayer() ?? .playerOne
+                        self.settings.assignFlicButton(button.identifier.uuidString, to: target)
+                    }
                 }
+                self.pendingAssignmentPlayer = nil
 
                 if let error {
                     self.status = .error(error.localizedDescription)
@@ -174,6 +181,69 @@ final class FlicInputController: NSObject, ObservableObject {
         status = .notSetUp
     }
 
+    // MARK: - One-input-per-player
+
+    /// Begin pairing a button and assign it to `player` once it verifies (dual mode).
+    func scan(assignTo player: Player) {
+        pendingAssignmentPlayer = player
+        scan()
+    }
+
+    /// Re-apply trigger mode to all known buttons when the toggle flips (called from Settings).
+    func reapplyTriggerMode() {
+        guard let manager = FLICManager.shared(), hasRestoredManagerState else { return }
+        manager.buttons().forEach(prepare)
+        if settings.oneInputPerPlayer {
+            migrateUnassignedButtons(known: manager.buttons())
+        }
+        refreshButtonsAndStatus()
+    }
+
+    private func lowestUnassignedPlayer() -> Player? {
+        for player in [Player.playerOne, .playerTwo] where !settings.hasInput(for: player) {
+            return player
+        }
+        return nil
+    }
+
+    /// Dual mode only: drop assignments for unknown buttons; assign known-but-unassigned buttons to free slots.
+    private func migrateUnassignedButtons(known: [FLICButton]) {
+        let knownIDs = Set(known.map { $0.identifier.uuidString })
+        for id in settings.flicButtonAssignments.keys where !knownIDs.contains(id) {
+            settings.removeFlicButtonAssignment(id: id)
+        }
+        for button in known {
+            let id = button.identifier.uuidString
+            guard settings.player(forFlicButtonID: id) == nil, let free = lowestUnassignedPlayer() else { continue }
+            settings.assignFlicButton(id, to: free)
+        }
+    }
+
+    func assignedButton(for player: Player) -> FlicButtonSnapshot? {
+        guard let id = settings.assignedFlicButtonID(for: player) else { return nil }
+        return buttons.first { $0.id.uuidString == id }
+    }
+
+    var scanningPlayer: Player? {
+        isScanning ? pendingAssignmentPlayer : nil
+    }
+
+    /// Forget the player's Flic and clear its assignment (also clears the watch if this slot used it).
+    func removeButton(for player: Player) {
+        guard let id = settings.assignedFlicButtonID(for: player) else {
+            settings.clearInput(for: player)
+            return
+        }
+        settings.removeFlicButtonAssignment(id: id)
+        if let manager = FLICManager.shared(),
+           let button = manager.buttons().first(where: { $0.identifier.uuidString == id }) {
+            manager.forgetButton(button) { [weak self] _, _ in
+                Task { @MainActor [weak self] in self?.refreshButtonsAndStatus() }
+            }
+        }
+        refreshButtonsAndStatus()
+    }
+
     @discardableResult
     private func configureIfNeeded() -> FLICManager? {
         if let manager = FLICManager.shared() {
@@ -188,7 +258,9 @@ final class FlicInputController: NSObject, ObservableObject {
 
     private func prepare(_ button: FLICButton) {
         button.delegate = self
-        button.triggerMode = .clickAndDoubleClickAndHold
+        // Dual mode: a single press scores immediately (low latency, no double-click
+        // wait); V1 keeps double-click so one button can score either player.
+        button.triggerMode = settings.oneInputPerPlayer ? .clickAndHold : .clickAndDoubleClickAndHold
     }
 
     private func refreshButtonsAndStatus(preservingError: Bool = false) {
@@ -207,6 +279,10 @@ final class FlicInputController: NSObject, ObservableObject {
         knownButtons.forEach(prepare)
 
         buttons = knownButtons.map(Self.snapshot(for:))
+
+        if settings.oneInputPerPlayer {
+            migrateUnassignedButtons(known: knownButtons)
+        }
 
         if !knownButtons.isEmpty {
             settings.flicInputEnabled = true
@@ -335,13 +411,29 @@ final class FlicInputController: NSObject, ObservableObject {
             handledEventKeys.insert(key)
         }
 
-        switch kind {
-        case .singleClick:
-            eventHandler(.point(player: .playerOne))
-        case .doubleClick:
-            eventHandler(.point(player: .playerTwo))
-        case .hold:
-            eventHandler(.undo)
+        if settings.oneInputPerPlayer {
+            switch kind {
+            case .singleClick, .doubleClick:
+                if let player = settings.player(forFlicButtonID: buttonID.uuidString) {
+                    eventHandler(.point(player: player))
+                } else if let free = lowestUnassignedPlayer() {
+                    // Self-healing: an unassigned button claims the next free slot.
+                    settings.assignFlicButton(buttonID.uuidString, to: free)
+                    eventHandler(.point(player: free))
+                }
+                // else both slots are taken by other buttons → ignore.
+            case .hold:
+                eventHandler(.undo)
+            }
+        } else {
+            switch kind {
+            case .singleClick:
+                eventHandler(.point(player: .playerOne))
+            case .doubleClick:
+                eventHandler(.point(player: .playerTwo))
+            case .hold:
+                eventHandler(.undo)
+            }
         }
     }
 

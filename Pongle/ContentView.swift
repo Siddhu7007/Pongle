@@ -77,6 +77,8 @@ struct ContentView: View {
 
                     MatchControlsDock(
                         isWatchConnected: store.isWatchReachable,
+                        isWatchAvailable: store.isWatchAppAvailable,
+                        externalInputAvailable: store.externalInputAvailable,
                         flicInput: store.flicInput
                     )
                 }
@@ -140,10 +142,12 @@ struct ContentView: View {
                         playerTwoAccent: store.settings.batColor(for: .playerTwo).accentColor,
                         winner: store.game.winner,
                         currentServer: store.game.currentServer,
+                        isAwaitingServeChoice: store.game.awaitingFirstServerChoice,
+                        firstServerChoiceInputMode: firstServerChoiceInputMode,
                         usesHorizontalLayout: isWide,
                         isCompact: true,
                         compactHeight: compactHeight,
-                        isIphoneTapInputEnabled: store.settings.iphoneTapInputEnabled,
+                        isIphoneTapInputEnabled: store.effectiveTapInputEnabled,
                         canUndo: store.game.canUndo,
                         onAddPoint: store.addPoint,
                         onUndo: store.undo
@@ -160,10 +164,13 @@ struct ContentView: View {
                         bottomPlayerScore: store.game.playerOneScore,
                         bottomPlayerAccent: store.settings.batColor(for: .playerOne).accentColor,
                         bottomPlayerIsServing: !awaitingServeChoice && store.game.currentServer == .playerOne,
+                        playerOneServeChoiceName: heroDisplayName(for: .playerOne),
+                        playerTwoServeChoiceName: heroDisplayName(for: .playerTwo),
+                        firstServerChoiceInputMode: firstServerChoiceInputMode,
                         winner: store.game.winner,
                         completedGames: store.game.completedGames,
                         gamesToWin: store.game.gamesToWin,
-                        isIphoneTapInputEnabled: store.settings.iphoneTapInputEnabled,
+                        isIphoneTapInputEnabled: store.effectiveTapInputEnabled,
                         isAwaitingServeChoice: awaitingServeChoice,
                         canUndo: store.game.canUndo,
                         onAddPoint: { player in
@@ -199,6 +206,14 @@ struct ContentView: View {
         }
 
         return player == .playerOne ? "You" : "Opponent"
+    }
+
+    private var firstServerChoiceInputMode: FirstServerChoiceInputMode {
+        FirstServerChoiceInputMode.mode(
+            tapInputEnabled: store.effectiveTapInputEnabled,
+            externalInputAvailable: store.externalInputAvailable,
+            dualInputsAssigned: store.hasDualInputsAssigned
+        )
     }
 
     private func toggleScoreboardMode() {
@@ -255,6 +270,9 @@ private struct HeroScoreboardScene: View {
     let bottomPlayerScore: Int
     let bottomPlayerAccent: Color
     let bottomPlayerIsServing: Bool
+    let playerOneServeChoiceName: String
+    let playerTwoServeChoiceName: String
+    let firstServerChoiceInputMode: FirstServerChoiceInputMode
     let winner: Player?
     let completedGames: [CompletedGame]
     let gamesToWin: Int
@@ -288,70 +306,84 @@ private struct HeroScoreboardScene: View {
         let bottomRailLift = 0.0
         let bottomClusterPullUp = min(max(availableSize.height * 0.022, 12), 20)
 
-        VStack(spacing: 0) {
-            HeroPlayerCluster(
-                playerName: topPlayerName,
-                score: topPlayerScore,
-                accent: topPlayerAccent,
-                isWinner: winner == .playerTwo,
-                isServing: topPlayerIsServing,
-                labelFontSize: labelFontSize,
-                scoreFont: scoreFont,
-                scoreColumnWidth: scoreColumnWidth,
-                clusterWidth: clusterWidth,
-                isTapInputEnabled: isIphoneTapInputEnabled,
-                isAwaitingServeChoice: isAwaitingServeChoice,
-                canUndo: canUndo,
-                showsPlayerName: true,
-                onUndo: onUndo
-            ) {
-                onAddPoint(.playerTwo)
-            }
-            .padding(.bottom, playerSpacing)
-
-            HeroAccentRail(accent: topPlayerAccent, emphasis: winner == .playerTwo, width: railWidth)
-                .zIndex(2)
-
-            Color.clear
-                .frame(height: tableContainerHeight)
-                .overlay(alignment: .top) {
-                    HeroTableSurface(
-                        width: tableVisualWidth,
-                        height: tableImageHeight,
-                        completedGames: completedGames,
-                        gamesToWin: gamesToWin,
-                        topAccent: topPlayerAccent,
-                        bottomAccent: bottomPlayerAccent
-                    )
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .offset(y: tableDrop - tableTopLift)
+        ZStack {
+            VStack(spacing: 0) {
+                HeroPlayerCluster(
+                    playerName: topPlayerName,
+                    score: topPlayerScore,
+                    accent: topPlayerAccent,
+                    isWinner: winner == .playerTwo,
+                    isServing: topPlayerIsServing,
+                    labelFontSize: labelFontSize,
+                    scoreFont: scoreFont,
+                    scoreColumnWidth: scoreColumnWidth,
+                    clusterWidth: clusterWidth,
+                    isTapInputEnabled: isIphoneTapInputEnabled,
+                    isAwaitingServeChoice: isAwaitingServeChoice,
+                    canUndo: canUndo,
+                    showsPlayerName: true,
+                    onUndo: onUndo
+                ) {
+                    onAddPoint(.playerTwo)
                 }
-                .zIndex(0)
-
-            HeroAccentRail(accent: bottomPlayerAccent, emphasis: winner == .playerOne, width: railWidth)
-                .padding(.top, -bottomRailLift)
                 .padding(.bottom, playerSpacing)
-                .zIndex(2)
 
-            HeroPlayerCluster(
-                playerName: bottomPlayerName,
-                score: bottomPlayerScore,
-                accent: bottomPlayerAccent,
-                isWinner: winner == .playerOne,
-                isServing: bottomPlayerIsServing,
-                labelFontSize: labelFontSize,
-                scoreFont: scoreFont,
-                scoreColumnWidth: scoreColumnWidth,
-                clusterWidth: clusterWidth,
-                isTapInputEnabled: isIphoneTapInputEnabled,
-                isAwaitingServeChoice: isAwaitingServeChoice,
-                canUndo: canUndo,
-                showsPlayerName: true,
-                onUndo: onUndo
-            ) {
-                onAddPoint(.playerOne)
+                HeroAccentRail(accent: topPlayerAccent, emphasis: winner == .playerTwo, width: railWidth)
+                    .zIndex(2)
+
+                Color.clear
+                    .frame(height: tableContainerHeight)
+                    .overlay(alignment: .top) {
+                        HeroTableSurface(
+                            width: tableVisualWidth,
+                            height: tableImageHeight,
+                            completedGames: completedGames,
+                            gamesToWin: gamesToWin,
+                            topAccent: topPlayerAccent,
+                            bottomAccent: bottomPlayerAccent
+                        )
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .offset(y: tableDrop - tableTopLift)
+                    }
+                    .zIndex(0)
+
+                HeroAccentRail(accent: bottomPlayerAccent, emphasis: winner == .playerOne, width: railWidth)
+                    .padding(.top, -bottomRailLift)
+                    .padding(.bottom, playerSpacing)
+                    .zIndex(2)
+
+                HeroPlayerCluster(
+                    playerName: bottomPlayerName,
+                    score: bottomPlayerScore,
+                    accent: bottomPlayerAccent,
+                    isWinner: winner == .playerOne,
+                    isServing: bottomPlayerIsServing,
+                    labelFontSize: labelFontSize,
+                    scoreFont: scoreFont,
+                    scoreColumnWidth: scoreColumnWidth,
+                    clusterWidth: clusterWidth,
+                    isTapInputEnabled: isIphoneTapInputEnabled,
+                    isAwaitingServeChoice: isAwaitingServeChoice,
+                    canUndo: canUndo,
+                    showsPlayerName: true,
+                    onUndo: onUndo
+                ) {
+                    onAddPoint(.playerOne)
+                }
+                .padding(.top, -bottomClusterPullUp)
             }
-            .padding(.top, -bottomClusterPullUp)
+
+            if isAwaitingServeChoice {
+                FirstServerChoicePrompt(
+                    playerOneName: playerOneServeChoiceName,
+                    playerTwoName: playerTwoServeChoiceName,
+                    inputMode: firstServerChoiceInputMode,
+                    isCompact: availableSize.width < 430
+                )
+                .padding(.horizontal, 18)
+                .offset(y: min(max(-availableSize.height * 0.045, -34), -10))
+                .zIndex(4)
+            }
         }
         .padding(.horizontal, horizontalPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -587,7 +619,7 @@ private struct HeroPlayerCluster: View {
     let action: () -> Void
 
     private var tapAction: (() -> Void)? {
-        isTapInputEnabled || isAwaitingServeChoice ? action : nil
+        isTapInputEnabled ? action : nil
     }
 
     private var longPressAction: (() -> Void)? {
@@ -639,7 +671,7 @@ private struct HeroPlayerCluster: View {
 
             Group {
                 if isAwaitingServeChoice {
-                    ServeChoiceBadge(accent: accent, isCompact: false)
+                    Color.clear
                 } else {
                     ServeBadge(accent: accent, isCompact: false)
                         .opacity(isServing ? 1 : 0)
@@ -753,28 +785,6 @@ private struct ServeBadge: View {
     }
 }
 
-private struct ServeChoiceBadge: View {
-    let accent: Color
-    let isCompact: Bool
-
-    var body: some View {
-        Text("Tap to Serve")
-            .font(.system(size: isCompact ? 9 : 11, weight: .semibold, design: .rounded))
-            .lineLimit(1)
-            .minimumScaleFactor(0.72)
-            .foregroundStyle(accent.opacity(0.78))
-            .padding(.horizontal, isCompact ? 9 : 12)
-            .padding(.vertical, isCompact ? 4 : 5)
-            .background(
-                Capsule()
-                    .stroke(
-                        accent.opacity(0.45),
-                        style: StrokeStyle(lineWidth: 1, dash: [3, 3])
-                    )
-            )
-    }
-}
-
 private struct HeroScoreText: View {
     let score: Int
     let accent: Color
@@ -870,6 +880,8 @@ private struct ScoreboardPanels: View {
     let playerTwoAccent: Color
     let winner: Player?
     let currentServer: Player
+    let isAwaitingServeChoice: Bool
+    let firstServerChoiceInputMode: FirstServerChoiceInputMode
     let usesHorizontalLayout: Bool
     let isCompact: Bool
     let compactHeight: CGFloat
@@ -879,16 +891,31 @@ private struct ScoreboardPanels: View {
     let onUndo: () -> Void
 
     var body: some View {
-        VStack(spacing: isCompact ? 8 : 10) {
-            Group {
-                if isCompact {
-                    panelLayout(usesHorizontalLayout: true, isCompact: true)
-                        .frame(height: compactHeight)
-                } else {
-                    panelLayout(usesHorizontalLayout: usesHorizontalLayout, isCompact: false)
+        ZStack(alignment: .top) {
+            VStack(spacing: isCompact ? 8 : 10) {
+                Group {
+                    if isCompact {
+                        panelLayout(usesHorizontalLayout: true, isCompact: true)
+                            .frame(height: compactHeight)
+                    } else {
+                        panelLayout(usesHorizontalLayout: usesHorizontalLayout, isCompact: false)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            if isAwaitingServeChoice {
+                FirstServerChoicePrompt(
+                    playerOneName: playerOneName,
+                    playerTwoName: playerTwoName,
+                    inputMode: firstServerChoiceInputMode,
+                    isCompact: true
+                )
+                .padding(.horizontal, 8)
+                .padding(.top, 8)
+                .zIndex(2)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -937,7 +964,7 @@ private struct ScoreboardPanels: View {
             score: score,
             accent: accent,
             isWinner: isWinner,
-            isServing: isServing,
+            isServing: !isAwaitingServeChoice && isServing,
             isCompact: isCompact,
             isTapInputEnabled: isIphoneTapInputEnabled
         )
@@ -947,9 +974,7 @@ private struct ScoreboardPanels: View {
                 .scoreInputGesture(
                     tapAction: { onAddPoint(player) },
                     longPressAction: canUndo ? onUndo : nil,
-                    accessibilityHint: canUndo
-                        ? "Tap to add one point for \(playerName), or touch and hold to undo the last point"
-                        : "Tap to add one point for \(playerName)"
+                    accessibilityHint: accessibilityHint(for: playerName)
                 )
         } else if canUndo {
             panel
@@ -961,6 +986,18 @@ private struct ScoreboardPanels: View {
         } else {
             panel
         }
+    }
+
+    private func accessibilityHint(for playerName: String) -> String {
+        if isAwaitingServeChoice {
+            return canUndo
+                ? "Tap to choose \(playerName) to serve first, or touch and hold to undo the last point"
+                : "Tap to choose \(playerName) to serve first"
+        }
+
+        return canUndo
+            ? "Tap to add one point for \(playerName), or touch and hold to undo the last point"
+            : "Tap to add one point for \(playerName)"
     }
 }
 

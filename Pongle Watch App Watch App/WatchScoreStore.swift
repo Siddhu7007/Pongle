@@ -12,7 +12,9 @@ final class WatchScoreStore: NSObject, ObservableObject {
     @Published private(set) var playerTwoName = Player.playerTwo.displayName
     @Published private(set) var playerOneColorID = "teal"
     @Published private(set) var playerTwoColorID = "orange"
+    @Published private(set) var matchModeState: WatchMatchModeState = .inactive
     private var session: WCSession?
+    private var matchSessionController: WatchMatchSessionController?
     private var pendingTapTask: Task<Void, Never>?
     private var pendingHapticTask: Task<Void, Never>?
     // Keep event sequences ahead of any previous launch while the phone app is still alive.
@@ -25,6 +27,10 @@ final class WatchScoreStore: NSObject, ObservableObject {
     init(activatesConnectivity: Bool = true) {
         super.init()
 
+        matchSessionController = WatchMatchSessionController { [weak self] state in
+            self?.matchModeState = state
+        }
+
         guard activatesConnectivity, WCSession.isSupported() else {
             return
         }
@@ -34,6 +40,14 @@ final class WatchScoreStore: NSObject, ObservableObject {
         session.delegate = self
         session.activate()
         handleConnectivityPayload(session.receivedApplicationContext)
+    }
+
+    func startMatchMode() {
+        matchSessionController?.start()
+    }
+
+    func endMatchMode(saveToHealth: Bool) {
+        matchSessionController?.end(saveToHealth: saveToHealth)
     }
 
     func registerTap() {

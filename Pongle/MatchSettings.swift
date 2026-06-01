@@ -17,18 +17,29 @@ extension Color {
 // MARK: - Models
 
 enum MatchLength: Int, CaseIterable, Identifiable {
+    case oneSet = 1
     case bestOfThree = 3
+    case bestOfFive = 5
+    case bestOfSeven = 7
 
     var id: Int { rawValue }
 
     var shortLabel: String {
         switch self {
+        case .oneSet: "1 game"
         case .bestOfThree: "Best of 3"
+        case .bestOfFive: "Best of 5"
+        case .bestOfSeven: "Best of 7"
         }
     }
 
     var gamesToWin: Int {
-        2
+        switch self {
+        case .oneSet: 1
+        case .bestOfThree: 2
+        case .bestOfFive: 3
+        case .bestOfSeven: 4
+        }
     }
 }
 
@@ -120,6 +131,7 @@ final class AppSettings: ObservableObject {
         static let announceCurrentScore = "pongle.announceCurrentScore"
         static let announceCriticalPoints = "pongle.announceCriticalPoints"
         static let announceDeuce = "pongle.announceDeuce"
+        static let announceUndoLastPoint = "pongle.announceUndoLastPoint"
         static let announcementSpeed = "pongle.announcementSpeed"
         static let voiceIdentifier = "pongle.voiceIdentifier"
         static let playerOneName = "pongle.playerOneName"
@@ -128,6 +140,9 @@ final class AppSettings: ObservableObject {
         static let playerTwoBatColor = "pongle.playerTwoBatColor"
         static let iphoneTapInputEnabled = "iphoneTapInputEnabled"
         static let flicInputEnabled = "pongle.flicInputEnabled"
+        static let oneInputPerPlayer = "pongle.oneInputPerPlayer"
+        static let flicButtonAssignments = "pongle.flicButtonAssignments"
+        static let watchAssignedPlayer = "pongle.watchAssignedPlayer"
     }
 
     @Published var scoringMode: ScoringMode {
@@ -177,6 +192,10 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(announceDeuce, forKey: Key.announceDeuce) }
     }
 
+    @Published var announceUndoLastPoint: Bool {
+        didSet { UserDefaults.standard.set(announceUndoLastPoint, forKey: Key.announceUndoLastPoint) }
+    }
+
     @Published var announcementSpeed: AnnouncementSpeed {
         didSet { UserDefaults.standard.set(announcementSpeed.rawValue, forKey: Key.announcementSpeed) }
     }
@@ -209,14 +228,36 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(flicInputEnabled, forKey: Key.flicInputEnabled) }
     }
 
+    /// When ON, each player binds to their own input source (a Flic button or
+    /// the Apple Watch) and a single press/tap scores that player. When OFF
+    /// (default) the V1 single-input behavior is preserved exactly.
+    @Published var oneInputPerPlayer: Bool {
+        didSet { UserDefaults.standard.set(oneInputPerPlayer, forKey: Key.oneInputPerPlayer) }
+    }
+
+    /// Maps a Flic button identifier (UUID string) to the player it scores.
+    @Published var flicButtonAssignments: [String: Player] {
+        didSet {
+            UserDefaults.standard.set(flicButtonAssignments.mapValues(\.rawValue), forKey: Key.flicButtonAssignments)
+        }
+    }
+
+    /// The single Apple Watch's assigned player, if any (one watch total).
+    @Published var watchAssignedPlayer: Player? {
+        didSet {
+            if let raw = watchAssignedPlayer?.rawValue {
+                UserDefaults.standard.set(raw, forKey: Key.watchAssignedPlayer)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Key.watchAssignedPlayer)
+            }
+        }
+    }
+
     init() {
         let defaults = UserDefaults.standard
 
-        self.scoringMode = .eleven
-        defaults.set(ScoringMode.eleven.rawValue, forKey: Key.scoringMode)
-
-        self.matchLength = .bestOfThree
-        defaults.set(MatchLength.bestOfThree.rawValue, forKey: Key.matchLength)
+        self.scoringMode = ScoringMode(rawValue: defaults.string(forKey: Key.scoringMode) ?? "") ?? .eleven
+        self.matchLength = MatchLength(rawValue: defaults.integer(forKey: Key.matchLength)) ?? .bestOfThree
 
         self.announcementsEnabled = (defaults.object(forKey: Key.announcementsEnabled) as? Bool) ?? true
         self.announceScore = (defaults.object(forKey: Key.announceScore) as? Bool) ?? true
@@ -226,6 +267,7 @@ final class AppSettings: ObservableObject {
         self.announceCurrentScore = (defaults.object(forKey: Key.announceCurrentScore) as? Bool) ?? true
         self.announceCriticalPoints = (defaults.object(forKey: Key.announceCriticalPoints) as? Bool) ?? true
         self.announceDeuce = (defaults.object(forKey: Key.announceDeuce) as? Bool) ?? true
+        self.announceUndoLastPoint = (defaults.object(forKey: Key.announceUndoLastPoint) as? Bool) ?? true
         self.announcementSpeed = AnnouncementSpeed(rawValue: defaults.string(forKey: Key.announcementSpeed) ?? "") ?? .oneX
         let preferredVoiceIdentifier = Self.samanthaVoiceIdentifier() ?? ""
         self.voiceIdentifier = preferredVoiceIdentifier
@@ -236,6 +278,10 @@ final class AppSettings: ObservableObject {
         self.playerTwoBatColor = PlayerBatColor(rawValue: defaults.string(forKey: Key.playerTwoBatColor) ?? "") ?? .orange
         self.iphoneTapInputEnabled = (defaults.object(forKey: Key.iphoneTapInputEnabled) as? Bool) ?? false
         self.flicInputEnabled = (defaults.object(forKey: Key.flicInputEnabled) as? Bool) ?? false
+        self.oneInputPerPlayer = (defaults.object(forKey: Key.oneInputPerPlayer) as? Bool) ?? false
+        let rawFlic = (defaults.dictionary(forKey: Key.flicButtonAssignments) as? [String: Int]) ?? [:]
+        self.flicButtonAssignments = rawFlic.compactMapValues(Player.init(rawValue:))
+        self.watchAssignedPlayer = (defaults.object(forKey: Key.watchAssignedPlayer) as? Int).flatMap(Player.init(rawValue:))
     }
 
     var scoringRules: ScoringRules {
@@ -263,6 +309,64 @@ final class AppSettings: ObservableObject {
         case .playerOne: playerOneBatColor
         case .playerTwo: playerTwoBatColor
         }
+    }
+
+    // MARK: - One-input-per-player assignment
+
+    func player(forFlicButtonID id: String) -> Player? {
+        flicButtonAssignments[id]
+    }
+
+    func assignedFlicButtonID(for player: Player) -> String? {
+        flicButtonAssignments.first { $0.value == player }?.key
+    }
+
+    func usesWatch(_ player: Player) -> Bool {
+        watchAssignedPlayer == player
+    }
+
+    func hasInput(for player: Player) -> Bool {
+        usesWatch(player) || assignedFlicButtonID(for: player) != nil
+    }
+
+    var bothPlayersHaveInput: Bool {
+        hasInput(for: .playerOne) && hasInput(for: .playerTwo)
+    }
+
+    /// Assign a Flic button to a player. One source per slot: removes any other
+    /// button on that player (clean "Replace") and clears the watch from that player.
+    func assignFlicButton(_ id: String, to player: Player) {
+        var updated = flicButtonAssignments
+        for (key, value) in updated where value == player {
+            updated.removeValue(forKey: key)
+        }
+        updated[id] = player
+        flicButtonAssignments = updated
+        if watchAssignedPlayer == player {
+            watchAssignedPlayer = nil
+        }
+    }
+
+    /// Assign the single watch to a player (Optional auto-removes it from the
+    /// other) and clear that player's Flic.
+    func assignWatch(to player: Player) {
+        if let buttonID = assignedFlicButtonID(for: player) {
+            flicButtonAssignments.removeValue(forKey: buttonID)
+        }
+        watchAssignedPlayer = player
+    }
+
+    func clearInput(for player: Player) {
+        if let buttonID = assignedFlicButtonID(for: player) {
+            flicButtonAssignments.removeValue(forKey: buttonID)
+        }
+        if watchAssignedPlayer == player {
+            watchAssignedPlayer = nil
+        }
+    }
+
+    func removeFlicButtonAssignment(id: String) {
+        flicButtonAssignments.removeValue(forKey: id)
     }
 
     var announcementSpeechRate: Float {
@@ -300,6 +404,8 @@ final class AppSettings: ObservableObject {
 struct MatchControlsDock: View {
     @EnvironmentObject var settings: AppSettings
     let isWatchConnected: Bool
+    let isWatchAvailable: Bool
+    let externalInputAvailable: Bool
     @ObservedObject var flicInput: FlicInputController
     @State private var isAnnouncementDetailsExpanded = false
 
@@ -311,11 +417,21 @@ struct MatchControlsDock: View {
             }
 
             section(title: "Settings") {
-                SettingsValueRow(title: "Mode", value: ScoringMode.eleven.shortLabel)
+                SettingsPickerRow(
+                    title: "Mode",
+                    selection: $settings.scoringMode,
+                    options: ScoringMode.allCases,
+                    label: { $0.shortLabel }
+                )
 
                 divider
 
-                SettingsValueRow(title: "Sets", value: MatchLength.bestOfThree.shortLabel)
+                SettingsPickerRow(
+                    title: "Sets",
+                    selection: $settings.matchLength,
+                    options: MatchLength.allCases,
+                    label: { $0.shortLabel }
+                )
 
                 divider
 
@@ -347,7 +463,7 @@ struct MatchControlsDock: View {
                 AnnouncementDetailsDisclosure(isExpanded: $isAnnouncementDetailsExpanded)
             }
 
-            section(title: "Controls") {
+            section(title: "Input Device Options") {
                 SettingsIconStatusRow(
                     icon: "applewatch",
                     title: "Apple Watch",
@@ -358,14 +474,30 @@ struct MatchControlsDock: View {
                 divider
 
                 SettingsToggleRow(
-                    title: "Enable iPhone Tap Input",
-                    subtitle: "Lets the iPhone scoreboard accept direct taps for testing",
-                    isOn: $settings.iphoneTapInputEnabled
+                    title: "Enable Screen Tap Input",
+                    isOn: $settings.iphoneTapInputEnabled,
+                    isLocked: !externalInputAvailable,
+                    lockedSubtitle: "Required — no Watch or Flic is connected"
                 )
 
                 divider
 
-                FlicControlRow(controller: flicInput)
+                SettingsToggleRow(
+                    title: "One input per player",
+                    subtitle: "Each player uses their own button or watch to score",
+                    isOn: $settings.oneInputPerPlayer
+                )
+                .onChange(of: settings.oneInputPerPlayer) { _, _ in
+                    flicInput.reapplyTriggerMode()
+                }
+
+                divider
+
+                if settings.oneInputPerPlayer {
+                    PlayerInputSlotsView(controller: flicInput, isWatchAvailable: isWatchAvailable)
+                } else {
+                    FlicControlRow(controller: flicInput)
+                }
 
                 divider
 
@@ -426,6 +558,10 @@ private struct AnnouncementDetailsDisclosure: View {
                 divider
 
                 announcementToggle("Next Server", isOn: $settings.announceNextServer)
+
+                divider
+
+                SettingsToggleRow(title: "Undo Last Point", isOn: $settings.announceUndoLastPoint)
 
                 divider
 
@@ -740,10 +876,12 @@ private struct FlicControlRow: View {
                         .font(.system(.subheadline, design: .rounded, weight: .medium))
                         .foregroundStyle(.white.opacity(0.88))
 
-                    Text(detailText)
-                        .font(.system(.caption, design: .rounded, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .fixedSize(horizontal: false, vertical: true)
+                    if let detailText {
+                        Text(detailText)
+                            .font(.system(.caption, design: .rounded, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.5))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
 
                 Spacer(minLength: 8)
@@ -855,10 +993,10 @@ private struct FlicControlRow: View {
         }
     }
 
-    private var detailText: String {
+    private var detailText: String? {
         switch controller.status {
         case .notSetUp:
-            "Single click scores you, double click scores opponent, hold undoes."
+            nil
         case .restoring:
             "Restoring paired Flic buttons."
         case .scanning(let message):
@@ -927,12 +1065,195 @@ private struct FlicControlRow: View {
     }
 }
 
+// MARK: - One-input-per-player slots
+
+private struct PlayerInputSlotsView: View {
+    @ObservedObject var controller: FlicInputController
+    let isWatchAvailable: Bool
+
+    var body: some View {
+        VStack(spacing: 10) {
+            PlayerInputSlotRow(player: .playerOne, controller: controller, isWatchAvailable: isWatchAvailable)
+            PlayerInputSlotRow(player: .playerTwo, controller: controller, isWatchAvailable: isWatchAvailable)
+
+            if let problem = globalProblemText {
+                Text(problem)
+                    .font(.system(.caption2, design: .rounded, weight: .semibold))
+                    .foregroundStyle(.red.opacity(0.85))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.vertical, 8)
+    }
+
+    /// Bluetooth/permission issues shared across both slots.
+    private var globalProblemText: String? {
+        switch controller.status {
+        case .bluetoothOff:
+            return "Turn on Bluetooth to use Flic buttons."
+        case .unauthorized:
+            return "Allow Bluetooth access in Settings to use Flic."
+        case .unsupported:
+            return "This device does not support Flic input."
+        case .error(let message):
+            return message
+        default:
+            return nil
+        }
+    }
+}
+
+private struct PlayerInputSlotRow: View {
+    @EnvironmentObject var settings: AppSettings
+    let player: Player
+    @ObservedObject var controller: FlicInputController
+    let isWatchAvailable: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(player == .playerOne ? Color.white.opacity(0.9) : Color(white: 0.12))
+                    .frame(width: 12, height: 12)
+                    .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 1))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(player == .playerOne ? "Player 1 Button" : "Player 2 Button")
+                        .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                    Text(settings.displayName(for: player))
+                        .font(.system(.caption2, design: .rounded, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+
+                Spacer()
+
+                Image(systemName: sourceIcon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+
+                Text(statusText)
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(statusColor)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(statusColor.opacity(0.13)))
+                    .overlay(Capsule().stroke(statusColor.opacity(0.32), lineWidth: 1))
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    controller.scan(assignTo: player)
+                } label: {
+                    Label(
+                        controller.assignedButton(for: player) == nil ? "Add Flic" : "Replace Flic",
+                        systemImage: "button.programmable"
+                    )
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.black)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.pongleAccent.opacity(controller.isScanning ? 0.45 : 1))
+                )
+                .disabled(controller.isScanning)
+
+                if isWatchAvailable {
+                    Button {
+                        settings.assignWatch(to: player)
+                    } label: {
+                        Label("Use Watch", systemImage: "applewatch")
+                            .font(.system(.caption, design: .rounded, weight: .bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(settings.usesWatch(player) ? .black : .white)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(settings.usesWatch(player) ? Color.green : Color.white.opacity(0.08))
+                    )
+                }
+
+                if settings.hasInput(for: player) {
+                    Button(role: .destructive) {
+                        controller.removeButton(for: player)
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.red.opacity(0.9))
+                            .frame(width: 38, height: 32)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.07)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(player.displayName) input")
+                }
+            }
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+    }
+
+    private var sourceIcon: String {
+        if settings.usesWatch(player) {
+            return "applewatch"
+        }
+        return controller.assignedButton(for: player) != nil ? "button.programmable" : "circle.dashed"
+    }
+
+    private var statusText: String {
+        if controller.scanningPlayer == player {
+            return "Scanning"
+        }
+        if settings.usesWatch(player) {
+            return isWatchAvailable ? "Apple Watch" : "Watch Off"
+        }
+        if let button = controller.assignedButton(for: player) {
+            return button.isReady ? "Connected" : "Disconnected"
+        }
+        return "Not Set Up"
+    }
+
+    private var statusColor: Color {
+        if controller.scanningPlayer == player {
+            return .pongleAccent
+        }
+        if settings.usesWatch(player) {
+            return isWatchAvailable ? .green : .white.opacity(0.5)
+        }
+        if let button = controller.assignedButton(for: player) {
+            return button.isReady ? .green : .white.opacity(0.58)
+        }
+        return .white.opacity(0.58)
+    }
+}
+
 // MARK: - Row primitives
 
 private struct SettingsToggleRow: View {
     let title: String
     var subtitle: String?
     @Binding var isOn: Bool
+    /// When true the toggle is forced ON, disabled, and uses `lockedSubtitle`
+    /// (when provided) in place of `subtitle`. Used to make settings honest
+    /// about state that the app overrides on the user's behalf.
+    var isLocked: Bool = false
+    var lockedSubtitle: String? = nil
+
+    private var effectiveSubtitle: String? {
+        isLocked ? (lockedSubtitle ?? subtitle) : subtitle
+    }
+
+    private var displayBinding: Binding<Bool> {
+        isLocked ? .constant(true) : $isOn
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -941,19 +1262,20 @@ private struct SettingsToggleRow: View {
                     .font(.system(.subheadline, design: .rounded, weight: .medium))
                     .foregroundStyle(.white.opacity(0.88))
 
-                if let subtitle {
-                    Text(subtitle)
+                if let effectiveSubtitle {
+                    Text(effectiveSubtitle)
                         .font(.system(.caption, design: .rounded, weight: .medium))
                         .foregroundStyle(.white.opacity(0.5))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer()
-            Toggle("", isOn: $isOn)
+            Toggle("", isOn: displayBinding)
                 .labelsHidden()
                 .tint(Color.pongleAccent)
+                .disabled(isLocked)
         }
-        .frame(minHeight: subtitle == nil ? 40 : 52)
+        .frame(minHeight: effectiveSubtitle == nil ? 40 : 52)
     }
 }
 
@@ -972,6 +1294,43 @@ private struct SettingsValueRow: View {
                 .foregroundStyle(.white.opacity(0.7))
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
+        }
+        .frame(minHeight: 40)
+    }
+}
+
+private struct SettingsPickerRow<Value: Hashable & Identifiable>: View {
+    let title: String
+    @Binding var selection: Value
+    let options: [Value]
+    let label: (Value) -> String
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.system(.subheadline, design: .rounded, weight: .medium))
+                .foregroundStyle(.white.opacity(0.88))
+            Spacer()
+            Menu {
+                Picker(title, selection: $selection) {
+                    ForEach(options) { option in
+                        Text(label(option)).tag(option)
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Text(label(selection))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+                .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.7))
+            }
+            .buttonStyle(.plain)
         }
         .frame(minHeight: 40)
     }

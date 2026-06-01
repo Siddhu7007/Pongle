@@ -52,6 +52,10 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Pongle uses HealthKit only for optional Table Tennis Match Mode so Pongle remains active during match mode and returns to the scoring screen when the watch wakes.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Pongle can optionally save a table tennis workout when you end Table Tennis Match Mode.</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
@@ -59,6 +63,10 @@
 	</array>
 	<key>WKApplication</key>
 	<true/>
+	<key>WKBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
+	</array>
 	<key>WKCompanionAppBundleIdentifier</key>
 	<string>com.cynqventures.pongle</string>
 </dict>

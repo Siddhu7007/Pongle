@@ -44,21 +44,41 @@ struct CompletedGame: Codable, Equatable, Identifiable {
 }
 
 enum ScoringMode: String, Codable, CaseIterable, Hashable, Identifiable {
+    case three
     case eleven
+    case twentyOne
 
     var id: String { rawValue }
 
     var shortLabel: String {
         switch self {
+        case .three:
+            "3 points"
         case .eleven:
             "11 points"
+        case .twentyOne:
+            "21 points"
         }
     }
 
     var rules: ScoringRules {
         switch self {
+        case .three:
+            ScoringRules(
+                pointsToWin: 3,
+                winningMargin: 2,
+                serveSwitchInterval: 2,
+                switchesServeEveryPointFromDeuce: true
+            )
         case .eleven:
             .eleven
+        case .twentyOne:
+            ScoringRules(
+                pointsToWin: 21,
+                winningMargin: 2,
+                serveSwitchInterval: 5,
+                switchesServeEveryPointFromDeuce: true
+            )
         }
     }
 }

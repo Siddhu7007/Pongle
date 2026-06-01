@@ -23,7 +23,9 @@ struct ContentView: View {
 
 private struct InputPadWatchView: View {
     @ObservedObject var store: WatchScoreStore
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
     @State private var isPressed = false
+    @State private var showsMatchModeEndOptions = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -33,24 +35,28 @@ private struct InputPadWatchView: View {
                 Color.black
                     .ignoresSafeArea()
 
-                RadialGradient(
-                    colors: [
-                        Color(red: 0.04, green: 0.30, blue: 0.13),
-                        Color(red: 0.015, green: 0.12, blue: 0.05),
-                        Color.black
-                    ],
-                    center: .center,
-                    startRadius: 6,
-                    endRadius: max(proxy.size.width, proxy.size.height) * 0.95
-                )
-                .ignoresSafeArea()
+                if !isLuminanceReduced {
+                    RadialGradient(
+                        colors: [
+                            Color(red: 0.04, green: 0.30, blue: 0.13),
+                            Color(red: 0.015, green: 0.12, blue: 0.05),
+                            Color.black
+                        ],
+                        center: .center,
+                        startRadius: 6,
+                        endRadius: max(proxy.size.width, proxy.size.height) * 0.95
+                    )
+                    .ignoresSafeArea()
+                }
 
-                Circle()
-                    .fill(Color(red: 0.30, green: 1.0, blue: 0.45).opacity(isPressed ? 0.46 : 0.22))
-                    .frame(width: buttonSize * 1.20, height: buttonSize * 1.20)
-                    .blur(radius: 34)
-                    .animation(.easeOut(duration: 0.18), value: isPressed)
-                    .allowsHitTesting(false)
+                if !isLuminanceReduced {
+                    Circle()
+                        .fill(Color(red: 0.30, green: 1.0, blue: 0.45).opacity(isPressed ? 0.46 : 0.22))
+                        .frame(width: buttonSize * 1.20, height: buttonSize * 1.20)
+                        .blur(radius: 34)
+                        .animation(.easeOut(duration: 0.18), value: isPressed)
+                        .allowsHitTesting(false)
+                }
 
                 ZStack {
                     Circle()
@@ -102,10 +108,10 @@ private struct InputPadWatchView: View {
                 }
                 .frame(width: buttonSize, height: buttonSize)
                 .shadow(
-                    color: Color.black.opacity(isPressed ? 0.30 : 0.62),
-                    radius: isPressed ? 6 : 18,
+                    color: Color.black.opacity(isLuminanceReduced ? 0 : (isPressed ? 0.30 : 0.62)),
+                    radius: isLuminanceReduced ? 0 : (isPressed ? 6 : 18),
                     x: 0,
-                    y: isPressed ? 2 : 9
+                    y: isLuminanceReduced ? 0 : (isPressed ? 2 : 9)
                 )
                 .scaleEffect(isPressed ? 0.94 : 1.0)
                 .animation(.spring(response: 0.22, dampingFraction: 0.62), value: isPressed)
@@ -133,6 +139,7 @@ private struct InputPadWatchView: View {
 
                 VStack {
                     HStack {
+                        matchModeButton
                         Spacer()
                         Circle()
                             .fill(store.isPhoneReachable ? Color.green : Color.pongleAccent)
@@ -147,9 +154,79 @@ private struct InputPadWatchView: View {
                 }
                 .padding(.top, 4)
                 .padding(.trailing, 6)
-                .allowsHitTesting(false)
+                .padding(.leading, 6)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .confirmationDialog(
+                "End Table Tennis Match Mode?",
+                isPresented: $showsMatchModeEndOptions,
+                titleVisibility: .visible
+            ) {
+                Button("Save Workout") {
+                    store.endMatchMode(saveToHealth: true)
+                }
+
+                Button("Discard Workout") {
+                    store.endMatchMode(saveToHealth: false)
+                }
+
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Saving is optional. Discarding ends Match Mode without adding a workout to Health.")
+            }
+            .onChange(of: store.game.matchWinner) { _, winner in
+                guard winner != nil, store.matchModeState.isActive else {
+                    return
+                }
+
+                showsMatchModeEndOptions = true
+            }
+        }
+    }
+
+    private var matchModeButton: some View {
+        Button {
+            if store.matchModeState.isActive {
+                showsMatchModeEndOptions = true
+            } else {
+                store.startMatchMode()
+            }
+        } label: {
+            Text(store.matchModeState.isActive ? "End" : store.matchModeState.statusText)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(matchModeTint.opacity(store.matchModeState.isActive ? 0.95 : 0.74))
+                )
+                .foregroundStyle(store.matchModeState.isActive ? Color.black : Color.white)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canTapMatchModeButton)
+        .opacity(canTapMatchModeButton ? 1 : 0.64)
+        .accessibilityLabel(store.matchModeState.isActive ? "End Table Tennis Match Mode" : "Start Table Tennis Match Mode")
+    }
+
+    private var canTapMatchModeButton: Bool {
+        switch store.matchModeState {
+        case .inactive, .active, .authorizationDenied, .failed:
+            true
+        case .requestingAuthorization, .starting, .ending, .unavailable:
+            false
+        }
+    }
+
+    private var matchModeTint: Color {
+        switch store.matchModeState {
+        case .active:
+            Color(red: 0.30, green: 1.0, blue: 0.45)
+        case .authorizationDenied, .failed, .unavailable:
+            Color.pongleAccent
+        case .inactive, .requestingAuthorization, .starting, .ending:
+            Color.white.opacity(0.20)
         }
     }
 }
