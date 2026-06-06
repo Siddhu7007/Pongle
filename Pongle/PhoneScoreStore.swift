@@ -349,7 +349,9 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             settings.$playerOneName.dropFirst().map { _ in }.eraseToAnyPublisher(),
             settings.$playerTwoName.dropFirst().map { _ in }.eraseToAnyPublisher(),
             settings.$playerOneBatColor.dropFirst().map { _ in }.eraseToAnyPublisher(),
-            settings.$playerTwoBatColor.dropFirst().map { _ in }.eraseToAnyPublisher()
+            settings.$playerTwoBatColor.dropFirst().map { _ in }.eraseToAnyPublisher(),
+            settings.$oneInputPerPlayer.dropFirst().map { _ in }.eraseToAnyPublisher(),
+            settings.$watchAssignedPlayer.dropFirst().map { _ in }.eraseToAnyPublisher()
         )
         // `@Published` fires during `willSet`; hop to the next runloop so the
         // broadcast reads the post-mutation value instead of the stale one.
@@ -630,6 +632,9 @@ final class PhoneScoreStore: NSObject, ObservableObject {
             ConnectivityKey.playerTwoName: settings.displayName(for: .playerTwo),
             ConnectivityKey.playerOneColorID: settings.playerOneBatColor.rawValue,
             ConnectivityKey.playerTwoColorID: settings.playerTwoBatColor.rawValue,
+            ConnectivityKey.watchAssignedPlayer: settings.oneInputPerPlayer
+                ? settings.watchAssignedPlayer?.rawValue ?? -1
+                : -1,
             ConnectivityKey.history: game.history.map(\.rawValue)
         ]
 
@@ -1030,6 +1035,7 @@ private enum ConnectivityKey {
     static let playerTwoName = "playerTwoName"
     static let playerOneColorID = "playerOneColorID"
     static let playerTwoColorID = "playerTwoColorID"
+    static let watchAssignedPlayer = "watchAssignedPlayer"
     static let history = "history"
 }
 

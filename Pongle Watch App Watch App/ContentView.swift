@@ -135,7 +135,7 @@ private struct InputPadWatchView: View {
                 )
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Input pad")
-                .accessibilityHint("Tap once for me, tap twice for opponent, hold to undo")
+                .accessibilityHint(store.inputAccessibilityHint)
 
                 VStack {
                     HStack {

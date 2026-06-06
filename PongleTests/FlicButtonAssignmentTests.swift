@@ -54,6 +54,21 @@ final class FlicButtonAssignmentTests: XCTestCase {
 
         XCTAssertFalse(settings.usesWatch(.playerOne))
         XCTAssertEqual(settings.player(forFlicButtonID: "A"), .playerOne)
+        XCTAssertTrue(settings.usesWatch(.playerTwo))
+    }
+
+    func testMixedWatchAndFlicAssignmentsSwapWithoutRescanning() {
+        let settings = AppSettings()
+        settings.assignFlicButton("A", to: .playerOne)
+        settings.assignWatch(to: .playerOne)
+
+        XCTAssertTrue(settings.usesWatch(.playerOne))
+        XCTAssertEqual(settings.player(forFlicButtonID: "A"), .playerTwo)
+
+        settings.assignWatch(to: .playerTwo)
+
+        XCTAssertTrue(settings.usesWatch(.playerTwo))
+        XCTAssertEqual(settings.player(forFlicButtonID: "A"), .playerOne)
     }
 
     func testBothPlayersHaveInputFlicPlusWatch() {

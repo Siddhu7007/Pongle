@@ -334,25 +334,38 @@ final class AppSettings: ObservableObject {
     }
 
     /// Assign a Flic button to a player. One source per slot: removes any other
-    /// button on that player (clean "Replace") and clears the watch from that player.
+    /// button on that player. If it replaces the Watch, the Watch moves to the
+    /// other open player slot so mixed Watch/Flic setups can be swapped directly.
     func assignFlicButton(_ id: String, to player: Player) {
+        let displacedWatch = watchAssignedPlayer == player
         var updated = flicButtonAssignments
         for (key, value) in updated where value == player {
             updated.removeValue(forKey: key)
         }
         updated[id] = player
         flicButtonAssignments = updated
-        if watchAssignedPlayer == player {
-            watchAssignedPlayer = nil
+
+        if displacedWatch {
+            watchAssignedPlayer = assignedFlicButtonID(for: player.opposite) == nil
+                ? player.opposite
+                : nil
         }
     }
 
-    /// Assign the single watch to a player (Optional auto-removes it from the
-    /// other) and clear that player's Flic.
+    /// Assign the single Watch to a player. If that slot already uses a Flic,
+    /// move the Flic to the other open slot instead of requiring another scan.
     func assignWatch(to player: Player) {
-        if let buttonID = assignedFlicButtonID(for: player) {
-            flicButtonAssignments.removeValue(forKey: buttonID)
+        let displacedButtonID = assignedFlicButtonID(for: player)
+        var updated = flicButtonAssignments
+
+        if let displacedButtonID {
+            updated.removeValue(forKey: displacedButtonID)
+            if !updated.values.contains(player.opposite) {
+                updated[displacedButtonID] = player.opposite
+            }
         }
+
+        flicButtonAssignments = updated
         watchAssignedPlayer = player
     }
 
@@ -407,12 +420,13 @@ struct MatchControlsDock: View {
     let isWatchAvailable: Bool
     let externalInputAvailable: Bool
     @ObservedObject var flicInput: FlicInputController
+    let onEditPlayerNames: () -> Void
     @State private var isAnnouncementDetailsExpanded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             section(title: "Players") {
-                PlayerCustomizationPanel()
+                PlayerCustomizationPanel(onEditPlayerNames: onEditPlayerNames)
                     .padding(.vertical, 12)
             }
 
@@ -467,8 +481,8 @@ struct MatchControlsDock: View {
                 SettingsIconStatusRow(
                     icon: "applewatch",
                     title: "Apple Watch",
-                    value: isWatchConnected ? "Connected" : "Not Connected",
-                    valueColor: isWatchConnected ? .pongleAccent : .white.opacity(0.45)
+                    value: watchStatusText,
+                    valueColor: watchStatusColor
                 )
 
                 divider
@@ -483,8 +497,8 @@ struct MatchControlsDock: View {
                 divider
 
                 SettingsToggleRow(
-                    title: "One input per player",
-                    subtitle: "Each player uses their own button or watch to score",
+                    title: "Assign inputs to players",
+                    subtitle: "Give each player a dedicated Watch or Flic control",
                     isOn: $settings.oneInputPerPlayer
                 )
                 .onChange(of: settings.oneInputPerPlayer) { _, _ in
@@ -540,6 +554,19 @@ struct MatchControlsDock: View {
             .frame(height: 1)
     }
 
+    private var watchStatusText: String {
+        if isWatchConnected {
+            return "Connected"
+        }
+        return isWatchAvailable ? "Available" : "Not Available"
+    }
+
+    private var watchStatusColor: Color {
+        if isWatchConnected {
+            return .green
+        }
+        return isWatchAvailable ? .pongleAccent : .white.opacity(0.45)
+    }
 }
 
 private struct AnnouncementDetailsDisclosure: View {
@@ -640,36 +667,24 @@ private struct AnnouncementDetailsDisclosure: View {
 
 private struct PlayerCustomizationPanel: View {
     @EnvironmentObject var settings: AppSettings
-    @FocusState private var focusedNameField: PlayerNameFieldFocus?
+    let onEditPlayerNames: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             PlayerCustomizationCard(
                 player: .playerOne,
-                name: nameBinding(for: .playerOne),
+                displayName: settings.displayName(for: .playerOne),
                 selectedColor: batColorBinding(for: .playerOne),
-                focusedNameField: $focusedNameField
+                onEditName: onEditPlayerNames
             )
 
             PlayerCustomizationCard(
                 player: .playerTwo,
-                name: nameBinding(for: .playerTwo),
+                displayName: settings.displayName(for: .playerTwo),
                 selectedColor: batColorBinding(for: .playerTwo),
-                focusedNameField: $focusedNameField
+                onEditName: onEditPlayerNames
             )
         }
-    }
-
-    private func nameBinding(for player: Player) -> Binding<String> {
-        Binding(
-            get: {
-                switch player {
-                case .playerOne: settings.playerOneName
-                case .playerTwo: settings.playerTwoName
-                }
-            },
-            set: { settings.setName($0, for: player) }
-        )
     }
 
     private func batColorBinding(for player: Player) -> Binding<PlayerBatColor> {
@@ -680,23 +695,11 @@ private struct PlayerCustomizationPanel: View {
     }
 }
 
-private enum PlayerNameFieldFocus: Hashable {
-    case playerOne
-    case playerTwo
-
-    init(player: Player) {
-        switch player {
-        case .playerOne: self = .playerOne
-        case .playerTwo: self = .playerTwo
-        }
-    }
-}
-
 private struct PlayerCustomizationCard: View {
     let player: Player
-    @Binding var name: String
+    let displayName: String
     @Binding var selectedColor: PlayerBatColor
-    let focusedNameField: FocusState<PlayerNameFieldFocus?>.Binding
+    let onEditName: () -> Void
 
     @State private var isPickerPresented = false
 
@@ -736,10 +739,10 @@ private struct PlayerCustomizationCard: View {
                     .presentationCompactAdaptation(.popover)
             }
 
-            PlayerNameTextField(
+            PlayerNameEditButton(
                 player: player,
-                name: $name,
-                focusedNameField: focusedNameField
+                displayName: displayName,
+                action: onEditName
             )
         }
         .padding(10)
@@ -755,61 +758,42 @@ private struct PlayerCustomizationCard: View {
     }
 }
 
-private struct PlayerNameTextField: View {
+private struct PlayerNameEditButton: View {
     let player: Player
-    @Binding var name: String
-    let focusedNameField: FocusState<PlayerNameFieldFocus?>.Binding
-
-    private var focusID: PlayerNameFieldFocus {
-        PlayerNameFieldFocus(player: player)
-    }
+    let displayName: String
+    let action: () -> Void
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            TextField(
-                player.displayName,
-                text: $name,
-                prompt: Text(player.displayName).foregroundColor(.white.opacity(0.72))
-            )
-            .font(.system(.footnote, design: .rounded, weight: .semibold))
-            .foregroundStyle(.white)
-            .multilineTextAlignment(.center)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .textInputAutocapitalization(.words)
-            .autocorrectionDisabled()
-            .submitLabel(.done)
-            .focused(focusedNameField, equals: focusID)
-            .onSubmit {
-                focusedNameField.wrappedValue = nil
-            }
-            .accessibilityLabel("\(player.displayName) name")
-            .padding(.horizontal, 26)
-            .padding(.vertical, 9)
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
 
-            Image(systemName: "pencil")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.white.opacity(0.5))
-                .padding(.trailing, 10)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-        .frame(maxWidth: .infinity, minHeight: 38)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.white.opacity(0.085))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-        }
-        .tint(.pongleAccent)
-        .contentShape(Rectangle())
-        .simultaneousGesture(
-            TapGesture().onEnded {
-                focusedNameField.wrappedValue = focusID
+                Text(displayName)
+                    .font(.system(.footnote, design: .rounded, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.84))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+
+                Image(systemName: "pencil")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.62))
+
+                Spacer(minLength: 0)
             }
-        )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, minHeight: 38)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.white.opacity(0.085))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Edit \(player.displayName) name")
     }
 }
 
@@ -1072,7 +1056,15 @@ private struct PlayerInputSlotsView: View {
     let isWatchAvailable: Bool
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Player Input Assignments", systemImage: "person.2.badge.gearshape")
+                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .foregroundStyle(.white.opacity(0.9))
+
+            Text("Single press or Watch tap scores the assigned player. Double press is ignored. Press and hold undoes.")
+                .font(.system(.caption, design: .rounded))
+                .foregroundStyle(.white.opacity(0.58))
+
             PlayerInputSlotRow(player: .playerOne, controller: controller, isWatchAvailable: isWatchAvailable)
             PlayerInputSlotRow(player: .playerTwo, controller: controller, isWatchAvailable: isWatchAvailable)
 
@@ -1118,7 +1110,7 @@ private struct PlayerInputSlotRow: View {
                     .overlay(Circle().stroke(Color.white.opacity(0.35), lineWidth: 1))
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(player == .playerOne ? "Player 1 Button" : "Player 2 Button")
+                    Text(player == .playerOne ? "Player 1 Input" : "Player 2 Input")
                         .font(.system(.subheadline, design: .rounded, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.9))
                     Text(settings.displayName(for: player))
@@ -1163,24 +1155,27 @@ private struct PlayerInputSlotRow: View {
                 )
                 .disabled(controller.isScanning)
 
-                if isWatchAvailable {
-                    Button {
-                        settings.assignWatch(to: player)
-                    } label: {
-                        Label("Use Watch", systemImage: "applewatch")
-                            .font(.system(.caption, design: .rounded, weight: .bold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.72)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(settings.usesWatch(player) ? .black : .white)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(settings.usesWatch(player) ? Color.green : Color.white.opacity(0.08))
+                Button {
+                    settings.assignWatch(to: player)
+                } label: {
+                    Label(
+                        isWatchAvailable ? "Use Watch" : "Watch Unavailable",
+                        systemImage: "applewatch"
                     )
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.62)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
                 }
+                .buttonStyle(.plain)
+                .foregroundStyle(settings.usesWatch(player) ? .black : .white)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(settings.usesWatch(player) ? Color.green : Color.white.opacity(0.08))
+                )
+                .disabled(!isWatchAvailable)
+                .opacity(isWatchAvailable || settings.usesWatch(player) ? 1 : 0.5)
 
                 if settings.hasInput(for: player) {
                     Button(role: .destructive) {

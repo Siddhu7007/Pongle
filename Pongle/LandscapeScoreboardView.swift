@@ -28,6 +28,7 @@ struct LandscapeScoreboardView: View {
                 HStack(spacing: 0) {
                     panel(
                         for: leftPlayer,
+                        serveIndicatorEdge: .leading,
                         nameFontSize: nameFontSize,
                         scoreFontSize: scoreFontSize,
                         isAwaitingServeChoice: awaitingServeChoice
@@ -41,6 +42,7 @@ struct LandscapeScoreboardView: View {
 
                     panel(
                         for: rightPlayer,
+                        serveIndicatorEdge: .trailing,
                         nameFontSize: nameFontSize,
                         scoreFontSize: scoreFontSize,
                         isAwaitingServeChoice: awaitingServeChoice
@@ -121,7 +123,7 @@ struct LandscapeScoreboardView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .sheet(isPresented: $isNameEditorPresented) {
-            LandscapeNameEditor(settings: store.settings)
+            PlayerNameEditorSheet(settings: store.settings)
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Color(red: 0.055, green: 0.06, blue: 0.065))
@@ -131,6 +133,7 @@ struct LandscapeScoreboardView: View {
     @ViewBuilder
     private func panel(
         for player: Player,
+        serveIndicatorEdge: ServeIndicatorEdge,
         nameFontSize: CGFloat,
         scoreFontSize: CGFloat,
         isAwaitingServeChoice: Bool
@@ -143,6 +146,7 @@ struct LandscapeScoreboardView: View {
             isAwaitingServeChoice: isAwaitingServeChoice,
             nameFontSize: nameFontSize,
             scoreFontSize: scoreFontSize,
+            serveIndicatorEdge: serveIndicatorEdge,
             onLongPress: store.game.canUndo ? { store.undo() } : nil,
             onTap: store.effectiveTapInputEnabled ? {
                 if isAwaitingServeChoice {
@@ -253,10 +257,10 @@ struct LandscapeScoreboardView: View {
     }
 }
 
-private struct LandscapeNameEditor: View {
+struct PlayerNameEditorSheet: View {
     @ObservedObject var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
-    @FocusState private var focusedNameField: LandscapeNameFieldFocus?
+    @FocusState private var focusedNameField: PlayerNameEditorFieldFocus?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -287,7 +291,7 @@ private struct LandscapeNameEditor: View {
     }
 
     private func nameField(title: String, player: Player) -> some View {
-        let focusID = LandscapeNameFieldFocus(player: player)
+        let focusID = PlayerNameEditorFieldFocus(player: player)
 
         return VStack(alignment: .leading, spacing: 7) {
             Text(title)
@@ -352,7 +356,7 @@ private struct LandscapeNameEditor: View {
     }
 }
 
-private enum LandscapeNameFieldFocus: Hashable {
+private enum PlayerNameEditorFieldFocus: Hashable {
     case playerOne
     case playerTwo
 
@@ -448,6 +452,7 @@ private struct PlayerPanel: View {
     let isAwaitingServeChoice: Bool
     let nameFontSize: CGFloat
     let scoreFontSize: CGFloat
+    let serveIndicatorEdge: ServeIndicatorEdge
     let onLongPress: (() -> Void)?
     let onTap: (() -> Void)?
 
@@ -512,8 +517,6 @@ private struct PlayerPanel: View {
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.4)
-
-                ServeIndicatorBar(accent: accent, scoreFontSize: scoreFontSize, isVisible: isServing)
             }
 
             Spacer(minLength: 0)
@@ -521,12 +524,30 @@ private struct PlayerPanel: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 56)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: serveIndicatorEdge.alignment) {
+            ServeIndicatorBar(accent: accent, isVisible: isServing)
+                .padding(.vertical, 16)
+                .padding(.horizontal, 14)
+        }
+    }
+}
+
+private enum ServeIndicatorEdge {
+    case leading
+    case trailing
+
+    var alignment: Alignment {
+        switch self {
+        case .leading:
+            .leading
+        case .trailing:
+            .trailing
+        }
     }
 }
 
 private struct ServeIndicatorBar: View {
     let accent: Color
-    let scoreFontSize: CGFloat
     let isVisible: Bool
 
     private var opacity: Double {
@@ -534,9 +555,6 @@ private struct ServeIndicatorBar: View {
     }
 
     var body: some View {
-        let width = min(max(scoreFontSize * 1.08, 220), 380)
-        let height = min(max(scoreFontSize * 0.07, 18), 30)
-
         Capsule()
             .fill(accent)
             .overlay(
@@ -545,7 +563,8 @@ private struct ServeIndicatorBar: View {
             )
             .shadow(color: accent.opacity(0.95), radius: 16, x: 0, y: 0)
             .shadow(color: Color.white.opacity(0.55), radius: 6, x: 0, y: 0)
-            .frame(width: width, height: height)
+            .frame(width: 14)
+            .frame(maxHeight: .infinity)
             .opacity(opacity)
             .accessibilityHidden(!isVisible)
     }

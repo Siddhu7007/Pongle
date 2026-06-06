@@ -12,6 +12,7 @@ final class WatchScoreStore: NSObject, ObservableObject {
     @Published private(set) var playerTwoName = Player.playerTwo.displayName
     @Published private(set) var playerOneColorID = "teal"
     @Published private(set) var playerTwoColorID = "orange"
+    @Published private(set) var assignedInputPlayer: Player?
     @Published private(set) var matchModeState: WatchMatchModeState = .inactive
     private var session: WCSession?
     private var matchSessionController: WatchMatchSessionController?
@@ -58,6 +59,12 @@ final class WatchScoreStore: NSObject, ObservableObject {
         if pendingTapTask != nil {
             pendingTapTask?.cancel()
             pendingTapTask = nil
+
+            if assignedInputPlayer != nil {
+                eventText = "Double tap ignored"
+                return
+            }
+
             commitPoint(for: .playerTwo)
             return
         }
@@ -69,9 +76,12 @@ final class WatchScoreStore: NSObject, ObservableObject {
                 return
             }
 
-            await MainActor.run {
-                self?.pendingTapTask = nil
-                self?.commitPoint(for: .playerOne)
+            await MainActor.run { [weak self] in
+                guard let self else {
+                    return
+                }
+                pendingTapTask = nil
+                commitPoint(for: assignedInputPlayer ?? .playerOne)
             }
         }
     }
@@ -113,6 +123,12 @@ final class WatchScoreStore: NSObject, ObservableObject {
         case .playerOne: playerOneColorID
         case .playerTwo: playerTwoColorID
         }
+    }
+
+    var inputAccessibilityHint: String {
+        assignedInputPlayer == nil
+            ? "Tap once for me, tap twice for opponent, hold to undo"
+            : "Tap once to score for your assigned player, tap twice to do nothing, hold to undo"
     }
 
     private func commitPoint(for player: Player) {
@@ -251,6 +267,10 @@ final class WatchScoreStore: NSObject, ObservableObject {
         if let colorID = payload[ConnectivityKey.playerTwoColorID] as? String,
            Self.validColorIDs.contains(colorID) {
             playerTwoColorID = colorID
+        }
+
+        if let rawAssignedPlayer = payload[ConnectivityKey.watchAssignedPlayer] as? Int {
+            assignedInputPlayer = Player(rawValue: rawAssignedPlayer)
         }
 
         eventText = winEventText() ?? "Synced"
@@ -406,6 +426,7 @@ private enum ConnectivityKey {
     static let playerTwoName = "playerTwoName"
     static let playerOneColorID = "playerOneColorID"
     static let playerTwoColorID = "playerTwoColorID"
+    static let watchAssignedPlayer = "watchAssignedPlayer"
     static let history = "history"
 }
 

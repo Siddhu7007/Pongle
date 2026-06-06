@@ -11,6 +11,7 @@ import UIKit
 struct ContentView: View {
     @ObservedObject var store: PhoneScoreStore
     @State private var isShowingResetConfirmation = false
+    @State private var isNameEditorPresented = false
     @State private var isScoreboardCompact = false
     @State private var isScoreboardTransitioning = false
     @State private var isScoreboardContentVisible = true
@@ -56,6 +57,12 @@ struct ContentView: View {
         } message: {
             Text("The current game score will be cleared.")
         }
+        .sheet(isPresented: $isNameEditorPresented) {
+            PlayerNameEditorSheet(settings: store.settings)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(red: 0.055, green: 0.06, blue: 0.065))
+        }
     }
 
     private var heroLayout: some View {
@@ -79,7 +86,8 @@ struct ContentView: View {
                         isWatchConnected: store.isWatchReachable,
                         isWatchAvailable: store.isWatchAppAvailable,
                         externalInputAvailable: store.externalInputAvailable,
-                        flicInput: store.flicInput
+                        flicInput: store.flicInput,
+                        onEditPlayerNames: { isNameEditorPresented = true }
                     )
                 }
                 .padding(.horizontal, 20)
@@ -105,12 +113,26 @@ struct ContentView: View {
     }
 
     private var topBar: some View {
-        // Title intentionally hidden; preserve original bar height so the
-        // surrounding VStack spacing rhythm stays the same.
         HStack(spacing: 12) {
             Spacer()
+
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                Button {
+                    isNameEditorPresented = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .frame(width: 38, height: 38)
+                        .background(Circle().fill(Color.black.opacity(0.28)))
+                        .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+                        .shadow(color: Color.black.opacity(0.24), radius: 8, x: 0, y: 4)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit player names")
+            }
         }
-        .frame(height: 28)
+        .frame(height: UIDevice.current.userInterfaceIdiom == .pad ? 38 : 28)
     }
 
     private var bottomActionRail: some View {
@@ -288,13 +310,11 @@ private struct HeroScoreboardScene: View {
         let scoreFont = min(max(availableSize.width * 0.158, 102), 148)
         let scoreColumnWidth = min(max(availableSize.width * 0.19, 114), 156)
         let clusterWidth = min(max(scoreColumnWidth + 112, 232), 344)
-        let railWidth = min(max(availableSize.width * 0.8, 272), 700)
         let tableFootprintWidth = min(max(availableSize.width * 0.9, 356), 640)
         let tableVisualWidth = min(max(tableFootprintWidth + 92, availableSize.width * 1.17), 800)
         let tableImageHeight = tableVisualWidth / tableAspectRatio
-        // Table PNG has ~10% transparent padding at the top and ~17% at the bottom. Lift
-        // the image so the visible top sits just below the opponent rail while the lower
-        // rail only clips the feet. Both rails are drawn above the table.
+        // Table PNG has ~10% transparent padding at the top and ~17% at the bottom.
+        // Lift the image so the visible top sits close to the opponent score.
         let tableBeamGap = 3.0
         let tableFootOverlap = min(max(tableImageHeight * 0.04, 18), 34)
         let tableTopLift = max(tableImageHeight * 0.10 - tableBeamGap, 0)
@@ -303,7 +323,6 @@ private struct HeroScoreboardScene: View {
         let tableContainerHeight = max(tableImageHeight * 0.852 - tableFootOverlap - (originalGap - (tableBeamGap + tableDrop)), 0)
         let horizontalPadding = min(max(availableSize.width * 0.006, 0), 6)
         let playerSpacing = min(max(availableSize.height * 0.004, 2), 6)
-        let bottomRailLift = 0.0
         let bottomClusterPullUp = min(max(availableSize.height * 0.022, 12), 20)
 
         ZStack {
@@ -328,9 +347,6 @@ private struct HeroScoreboardScene: View {
                 }
                 .padding(.bottom, playerSpacing)
 
-                HeroAccentRail(accent: topPlayerAccent, emphasis: winner == .playerTwo, width: railWidth)
-                    .zIndex(2)
-
                 Color.clear
                     .frame(height: tableContainerHeight)
                     .overlay(alignment: .top) {
@@ -340,17 +356,14 @@ private struct HeroScoreboardScene: View {
                             completedGames: completedGames,
                             gamesToWin: gamesToWin,
                             topAccent: topPlayerAccent,
-                            bottomAccent: bottomPlayerAccent
+                            bottomAccent: bottomPlayerAccent,
+                            topPlayerIsServing: topPlayerIsServing,
+                            bottomPlayerIsServing: bottomPlayerIsServing
                         )
                             .frame(maxWidth: .infinity, alignment: .center)
                             .offset(y: tableDrop - tableTopLift)
                     }
                     .zIndex(0)
-
-                HeroAccentRail(accent: bottomPlayerAccent, emphasis: winner == .playerOne, width: railWidth)
-                    .padding(.top, -bottomRailLift)
-                    .padding(.bottom, playerSpacing)
-                    .zIndex(2)
 
                 HeroPlayerCluster(
                     playerName: bottomPlayerName,
@@ -365,7 +378,7 @@ private struct HeroScoreboardScene: View {
                     isTapInputEnabled: isIphoneTapInputEnabled,
                     isAwaitingServeChoice: isAwaitingServeChoice,
                     canUndo: canUndo,
-                    showsPlayerName: true,
+                    showsPlayerName: false,
                     onUndo: onUndo
                 ) {
                     onAddPoint(.playerOne)
@@ -397,6 +410,8 @@ private struct HeroTableSurface: View {
     let gamesToWin: Int
     let topAccent: Color
     let bottomAccent: Color
+    let topPlayerIsServing: Bool
+    let bottomPlayerIsServing: Bool
 
     private enum TableSide { case top, bottom }
 
@@ -434,6 +449,20 @@ private struct HeroTableSurface: View {
                 .frame(width: width)
                 .shadow(color: .black.opacity(0.42), radius: 12, x: 0, y: 6)
 
+            tableServeIndicator(
+                accent: topAccent,
+                isVisible: topPlayerIsServing,
+                widthFraction: 0.42
+            )
+            .position(x: width * 0.5, y: height * 0.051 - 8)
+
+            tableServeIndicator(
+                accent: bottomAccent,
+                isVisible: bottomPlayerIsServing,
+                widthFraction: 0.76
+            )
+            .position(x: width * 0.5, y: height * 0.789 + 8)
+
             ForEach(1...totalSlots, id: \.self) { slot in
                 let slotState = state(forGameNumber: slot)
                 tile(forGameNumber: slot, state: slotState, side: .top)
@@ -443,6 +472,24 @@ private struct HeroTableSurface: View {
             }
         }
         .frame(width: width, height: height)
+    }
+
+    private func tableServeIndicator(
+        accent: Color,
+        isVisible: Bool,
+        widthFraction: CGFloat
+    ) -> some View {
+        Capsule()
+            .fill(accent)
+            .overlay(
+                Capsule()
+                    .stroke(Color.white.opacity(0.9), lineWidth: 1.5)
+            )
+            .frame(width: width * widthFraction, height: 5)
+            .shadow(color: accent.opacity(0.9), radius: 8, x: 0, y: 0)
+            .shadow(color: accent.opacity(0.45), radius: 16, x: 0, y: 0)
+            .opacity(isVisible ? 1 : 0)
+            .accessibilityHidden(!isVisible)
     }
 
     @ViewBuilder
@@ -669,16 +716,8 @@ private struct HeroPlayerCluster: View {
             HeroScoreText(score: score, accent: accent, fontSize: scoreFont, isWinner: isWinner)
                 .frame(width: scoreColumnWidth, alignment: .center)
 
-            Group {
-                if isAwaitingServeChoice {
-                    Color.clear
-                } else {
-                    ServeBadge(accent: accent, isCompact: false)
-                        .opacity(isServing ? 1 : 0)
-                        .accessibilityHidden(!isServing)
-                }
-            }
-            .frame(height: serveBadgeHeight)
+            Color.clear
+                .frame(height: serveBadgeHeight)
         }
         .frame(maxWidth: clusterWidth, minHeight: max(scoreFont * 0.96, 108), alignment: .center)
         .frame(maxWidth: .infinity)
@@ -801,73 +840,6 @@ private struct HeroScoreText: View {
             .shadow(color: .black.opacity(0.30), radius: 2, x: 0, y: 1)
             .shadow(color: accent.opacity(isWinner ? 0.75 : 0.62), radius: isWinner ? 18 : 14, x: 0, y: 0)
             .shadow(color: accent.opacity(isWinner ? 0.45 : 0.32), radius: isWinner ? 36 : 28, x: 0, y: 0)
-    }
-}
-
-private struct HeroAccentRail: View {
-    let accent: Color
-    let emphasis: Bool
-    let width: CGFloat
-
-    var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(Color.white.opacity(0.05))
-                .frame(width: width, height: 1.1)
-
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            accent.opacity(0),
-                            accent.opacity(emphasis ? 0.1 : 0.08),
-                            accent.opacity(emphasis ? 0.24 : 0.19),
-                            accent.opacity(emphasis ? 0.1 : 0.08),
-                            accent.opacity(0)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: width, height: 22)
-                .blur(radius: emphasis ? 28 : 24)
-
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            accent.opacity(0),
-                            accent.opacity(emphasis ? 0.26 : 0.2),
-                            accent.opacity(emphasis ? 0.58 : 0.48),
-                            accent.opacity(emphasis ? 0.26 : 0.2),
-                            accent.opacity(0)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: width * 0.9, height: 7)
-                .blur(radius: emphasis ? 8 : 7)
-
-            Rectangle()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            accent.opacity(0),
-                            accent.opacity(emphasis ? 0.68 : 0.58),
-                            accent.opacity(emphasis ? 1 : 0.94),
-                            accent.opacity(emphasis ? 0.68 : 0.58),
-                            accent.opacity(0)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .frame(width: width * 0.74, height: 1.6)
-                .shadow(color: accent.opacity(emphasis ? 0.42 : 0.34), radius: emphasis ? 12 : 9, x: 0, y: 0)
-        }
-        .compositingGroup()
-        .frame(height: 18)
     }
 }
 

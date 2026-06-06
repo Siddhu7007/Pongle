@@ -258,9 +258,9 @@ final class FlicInputController: NSObject, ObservableObject {
 
     private func prepare(_ button: FLICButton) {
         button.delegate = self
-        // Dual mode: a single press scores immediately (low latency, no double-click
-        // wait); V1 keeps double-click so one button can score either player.
-        button.triggerMode = settings.oneInputPerPlayer ? .clickAndHold : .clickAndDoubleClickAndHold
+        // Dual mode still asks the SDK to classify double-clicks so the handler
+        // can suppress accidental double presses instead of scoring the first tap.
+        button.triggerMode = .clickAndDoubleClickAndHold
     }
 
     private func refreshButtonsAndStatus(preservingError: Bool = false) {
@@ -413,7 +413,7 @@ final class FlicInputController: NSObject, ObservableObject {
 
         if settings.oneInputPerPlayer {
             switch kind {
-            case .singleClick, .doubleClick:
+            case .singleClick:
                 if let player = settings.player(forFlicButtonID: buttonID.uuidString) {
                     eventHandler(.point(player: player))
                 } else if let free = lowestUnassignedPlayer() {
@@ -422,6 +422,8 @@ final class FlicInputController: NSObject, ObservableObject {
                     eventHandler(.point(player: free))
                 }
                 // else both slots are taken by other buttons → ignore.
+            case .doubleClick:
+                break
             case .hold:
                 eventHandler(.undo)
             }
